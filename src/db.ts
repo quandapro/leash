@@ -262,6 +262,7 @@ export class Store {
     return this.all(`SELECT a.*, k.name AS key_name FROM alerts a LEFT JOIN keys k ON k.id = a.key_id ORDER BY a.ts DESC LIMIT ?`, limit);
   }
   sessionAlerts(sessionId: string): Alert[] { return this.all('SELECT * FROM alerts WHERE session_id = ? ORDER BY ts', sessionId); }
+  resolveAllAlerts(ts: number): void { this.run('UPDATE alerts SET resolved_at = ? WHERE resolved_at IS NULL', ts); }
   openAlertCount(): number { return this.get<{ n: number }>('SELECT COUNT(*) AS n FROM alerts WHERE resolved_at IS NULL')?.n ?? 0; }
   resolveAlert(id: number, now: number): void { this.run('UPDATE alerts SET resolved_at = COALESCE(resolved_at, ?) WHERE id = ?', now, id); }
 

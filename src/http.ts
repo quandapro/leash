@@ -34,7 +34,7 @@ export function sendJson(res: ServerResponse, status: number, body: unknown, hea
 }
 
 const DASHBOARD_CSP = [
-  "default-src 'none'", "style-src 'self'", "script-src 'self'", "img-src 'self' data:",
+  "default-src 'none'", "style-src 'self'", "script-src 'self'", "img-src 'self' data:", "font-src 'self'",
   "connect-src 'self'", "form-action 'self'", "frame-ancestors 'none'", "base-uri 'none'",
 ].join('; ');
 

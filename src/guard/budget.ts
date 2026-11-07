@@ -7,7 +7,8 @@ export interface BudgetVerdict {
   warnings: string[];
 }
 
-const fmt = (n: number) => `$${n.toFixed(2)}`;
+// Agent-sized amounts need more than cents: $0.0042, not $0.00.
+const fmt = (n: number) => (Math.abs(n) < 1 ? `$${n.toFixed(4).replace(/(\.\d\d\d*?)0+$/, '$1')}` : `$${n.toFixed(2)}`);
 
 export function globalDailyLimit(store: Store): number | null {
   const v = Number(store.getSetting('global_daily_usd'));

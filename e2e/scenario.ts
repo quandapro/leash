@@ -120,9 +120,9 @@ export async function scenario(o: ScenarioOptions): Promise<void> {
 
   await step('create keys', async () => {
     const page = await (await d.get('/keys')).text();
-    const ids = [...page.matchAll(/<option value="(\d+)">([a-z]+) \((anthropic|openai)\)<\/option>/g)];
-    const aId = ids.find((m) => m[3] === 'anthropic')![1]!;
-    const oId = ids.find((m) => m[3] === 'openai')![1]!;
+    const ids = [...page.matchAll(/<option value="(\d+)">([a-z]+) \((Anthropic|OpenAI-compatible)\)<\/option>/g)];
+    const aId = ids.find((m) => m[3] === 'Anthropic')![1]!;
+    const oId = ids.find((m) => m[3] === 'OpenAI-compatible')![1]!;
     const mk = async (name: string, provider: string) => {
       const res = await d.post('/keys', { name, provider_id: provider, daily_usd: '1000', monthly_usd: '', model_allow: '', redact_mode: 'redact', loop_mode: 'enforce' });
       assert.equal(res.status, 200);

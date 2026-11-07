@@ -31,8 +31,9 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Safe 
 
 export const usd = (n: number | null | undefined): string => {
   if (n === null || n === undefined) return '—';
-  if (n !== 0 && Math.abs(n) < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
+  // Under a dollar, show up to 4 decimals so agent-sized amounts are exact ($0.0079, $0.0412, $0.50).
+  if (Math.abs(n) < 1) return `$${n.toFixed(4).replace(/(\.\d\d\d*?)0+$/, '$1')}`;
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 export const int = (n: number): string => n.toLocaleString('en-US');

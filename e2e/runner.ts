@@ -16,7 +16,7 @@ async function login(): Promise<{ cookie: string; csrf: string }> {
 async function newKey(): Promise<string> {
   const { cookie, csrf } = await login();
   const page = await (await fetch(leash + '/keys', { headers: { cookie } })).text();
-  const providerId = /<option value="(\d+)">anthropic \(anthropic\)<\/option>/.exec(page)![1]!;
+  const providerId = /<option value="(\d+)">anthropic \(Anthropic\)<\/option>/.exec(page)![1]!;
   const res = await fetch(leash + '/keys', {
     method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ _csrf: csrf, name: 'load', provider_id: providerId, daily_usd: '', monthly_usd: '', model_allow: '', redact_mode: 'redact', loop_mode: 'enforce' }),

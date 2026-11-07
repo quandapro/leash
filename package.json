@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts",
     "e2e": "node --disable-warning=ExperimentalWarning e2e/run.ts",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/demo.ts",
     "check": "npm run typecheck && npm test"
   },
   "devDependencies": {

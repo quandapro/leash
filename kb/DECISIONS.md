@@ -87,3 +87,23 @@ and the hash fallback strip `<system-reminder>` blocks, which Claude Code inject
 ## 2026-11-07 Usage fields only overwrite with numbers
 Gateways send `null` for usage fields they fill in later stream events (OpenRouter sends
 `cache_read_input_tokens: null` in `message_start`). A `null` never overwrites a count already seen.
+
+## 2026-11-07 Dashboard redesign: breaker panel, not SaaS admin
+The owner called the first dashboard "AI slop". An impeccable critique scored it 22/40 (KPI card row, empty chart,
+card-on-grey everywhere, side-stripe notices, forms always open). The redesign leads with a status sentence and a
+"Needs you" list with inline actions, uses ledger rows instead of cards, meters for spend against caps, and a
+replay that folds identical steps (×N). Re-scored 28/40. Rules in DESIGN.md, audience in PRODUCT.md.
+
+## 2026-11-07 Bundle brand fonts instead of system UI
+System UI resolved to Roboto and read as a default template. Archivo (UI) and IBM Plex Mono (data), both SIL OFL
+and the landing page's brand fonts, are bundled in `src/dashboard/fonts/` (65 KB latin subsets, licences
+alongside) and served from `/static/fonts/`. CSP gains `font-src 'self'` only; no third-party requests.
+
+## 2026-11-07 Content-hashed asset URLs
+`/static/app.css?v=<hash>` and `app.js?v=<hash>`, cached for a year as immutable. Without it an upgrade served the
+previous version's stylesheet from cache for up to an hour.
+
+## 2026-11-07 Owner rule beats skill interviews
+impeccable's init and critique flows ask the user questions. The owner's standing rule for Leash is "do not ask",
+so PRODUCT.md was written from the README, spec and KB, and the critique scope (all issues) was decided here.
+

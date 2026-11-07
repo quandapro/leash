@@ -35,6 +35,13 @@ planted AWS key never reached the provider; Leash overhead ~5 ms median. Traces 
 (gitignored). The run found and fixed: Claude Code 2.1 JSON session ids, `<system-reminder>` session labels,
 provider-reported cost (OpenRouter `usage.cost`), null usage fields.
 
+Dashboard redesigned 2026-11-07 (impeccable critique 22 → 28/40): status line + "Needs you", ledger rows, spend
+meters, folded replay, bundled Archivo / IBM Plex Mono, light + dark. `npm run demo` serves a populated dashboard
+on :8790 (token `demo-admin-token-0123456789abcdef`). PRODUCT.md / DESIGN.md hold the design context; the
+impeccable skill is copied (gitignored) into `.claude/skills/impeccable/` from the owner's EasyBaby project.
+Open design items: keyboard shortcuts / session search, live updates instead of timed refresh, a page explaining
+each guard rule.
+
 ## Next steps (in order)
 
 1. Hostinger Open-Source Partners is not open yet; "List your app" is a waitlist. Leash was submitted to it on
