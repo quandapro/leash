@@ -77,6 +77,22 @@ env_key = "LEASH_API_KEY"
 wire_api = "responses"
 ```
 
+**Claude Code on other models through OpenRouter** (tested with `deepseek/deepseek-v4.1-flash-1017`):
+add a provider of type *Anthropic* with base URL `https://openrouter.ai/api` and your OpenRouter key, create a
+key on it, then
+
+```bash
+export ANTHROPIC_BASE_URL=https://leash.example.com/anthropic
+export ANTHROPIC_API_KEY=lsh_your_leash_key
+export ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek/deepseek-v4.1-flash-1017   # also _OPUS_ and _HAIKU_
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000                            # the model's real window
+claude --model deepseek/deepseek-v4.1-flash-1017
+```
+
+Leash records the cost OpenRouter reports for each request, so time-of-day pricing is exact; set a price on the
+Providers page only so the budget pre-check has an estimate. Claude Code's own cost display assumes Claude prices
+for unknown models and overstates spend (about 40x in our test).
+
 **Anything OpenAI-compatible** (Cline, aider, Continue, OpenClaw, Hermes, OpenRouter clients): base URL
 `https://leash.example.com/openai/v1`, API key = your Leash key. Add the provider with its own base URL
 (for example `https://openrouter.ai/api/v1`) and set model prices on the Providers page.

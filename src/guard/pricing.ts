@@ -8,6 +8,7 @@ export interface Usage {
   output: number;
   cacheWrite: number;
   cacheRead: number;
+  reportedCost?: number; // USD the provider says it billed (OpenRouter `usage.cost`), preferred over our table
 }
 
 interface Rate { input: number; output: number; cacheWrite?: number; cacheRead?: number; longInput?: { above: number; input: number; output: number } }

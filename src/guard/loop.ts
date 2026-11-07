@@ -83,6 +83,26 @@ function result(name: string, content: unknown, isError: boolean): ToolEventIn {
   return { kind: 'result', name, argsHash: '', path: null, resultHash: hash(text), isError, preview: preview(text) };
 }
 
+// Claude Code wraps injected context in <system-reminder> tags; it is not what the user typed.
+function userText(content: unknown): string {
+  return textOf(content).replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+}
+
+const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
+
+// Claude Code puts its session id in metadata.user_id: a JSON object ({"session_id": ...}) since 2.1,
+// `user_<hash>_account_<uuid>_session_<uuid>` before that.
+function claudeCodeSession(uid: unknown): string | null {
+  if (typeof uid !== 'string' || !uid) return null;
+  if (uid.startsWith('{')) {
+    try {
+      const sid = (JSON.parse(uid) as { session_id?: unknown }).session_id;
+      if (typeof sid === 'string' && SESSION_ID.test(sid)) return sid;
+    } catch { /* fall through to the legacy format */ }
+  }
+  return /session_([0-9a-f-]{8,})/i.exec(uid)?.[1] ?? null;
+}
+
 export interface Extracted {
   events: ToolEventIn[];
   firstUserText: string;
@@ -97,12 +117,10 @@ export function extract(format: ApiFormat, body: Record<string, unknown>): Extra
 
   if (format === 'anthropic') {
     const meta = body.metadata as Record<string, unknown> | undefined;
-    const uid = typeof meta?.user_id === 'string' ? meta.user_id : '';
-    const m = /session_([0-9a-f-]{8,})/i.exec(uid);
-    if (m) clientSessionId = m[1]!;
+    clientSessionId = claudeCodeSession(meta?.user_id);
     for (const msg of (Array.isArray(body.messages) ? body.messages : []) as Record<string, unknown>[]) {
       const content = msg.content;
-      if (msg.role === 'user' && !firstUserText) firstUserText = textOf(content);
+      if (msg.role === 'user' && !firstUserText) firstUserText = userText(content);
       if (!Array.isArray(content)) continue;
       for (const block of content as Record<string, unknown>[]) {
         if (block?.type === 'tool_use') {
@@ -117,7 +135,7 @@ export function extract(format: ApiFormat, body: Record<string, unknown>): Extra
     }
   } else if (format === 'openai-chat') {
     for (const msg of (Array.isArray(body.messages) ? body.messages : []) as Record<string, unknown>[]) {
-      if (msg.role === 'user' && !firstUserText) firstUserText = textOf(msg.content);
+      if (msg.role === 'user' && !firstUserText) firstUserText = userText(msg.content);
       if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
         for (const tc of msg.tool_calls as Record<string, unknown>[]) {
           const fn = (tc.function ?? {}) as Record<string, unknown>;
@@ -132,7 +150,7 @@ export function extract(format: ApiFormat, body: Record<string, unknown>): Extra
     }
   } else {
     const input = body.input;
-    if (typeof input === 'string') firstUserText = input;
+    if (typeof input === 'string') firstUserText = userText(input);
     for (const item of (Array.isArray(input) ? input : []) as Record<string, unknown>[]) {
       const type = item.type ?? (item.role ? 'message' : undefined);
       if (type === 'message' && item.role === 'user' && !firstUserText) firstUserText = textOf(item.content);

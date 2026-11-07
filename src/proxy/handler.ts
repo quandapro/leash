@@ -337,7 +337,9 @@ async function forwardMetered(
   } finally {
     // Metering happens even if the client disconnected mid-stream: the tokens were still billed.
     const meteredModel = reportedModel ?? model;
-    const { usd, known } = prices.cost(provider.kind, meteredModel, usage);
+    const { usd, known } = usage.reportedCost !== undefined
+      ? { usd: usage.reportedCost, known: true }
+      : prices.cost(provider.kind, meteredModel, usage);
     const ts = Date.now();
     store.transaction(() => {
     store.insertRequest({

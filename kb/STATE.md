@@ -28,6 +28,13 @@ Done and verified (unit tests + `npm run e2e` in a 2 vCPU / 4 GB container):
 Measured: added latency ~0.8 ms p50 / 1.3 ms p95 at concurrency 1; at concurrency 16 in Docker ~17-19 ms p50
 (single Node thread; fine for personal use).
 
+Live-tested 2026-11-07: Claude Code 2.1.309 → Leash → OpenRouter `deepseek/deepseek-v4.1-flash-1017` (Anthropic
+endpoint `https://openrouter.ai/api`). Two runs (fix tests, then a resumed follow-up), 10 requests, all 200.
+Tokens and cost match OpenRouter exactly; cache hit 89% of prompt tokens (98% after the cold first request);
+planted AWS key never reached the provider; Leash overhead ~5 ms median. Traces in `e2e/.tmp/live-deepseek/`
+(gitignored). The run found and fixed: Claude Code 2.1 JSON session ids, `<system-reminder>` session labels,
+provider-reported cost (OpenRouter `usage.cost`), null usage fields.
+
 ## Next steps (in order)
 
 1. Hostinger Open-Source Partners is not open yet; "List your app" is a waitlist. Leash was submitted to it on
@@ -39,7 +46,8 @@ Measured: added latency ~0.8 ms p50 / 1.3 ms p95 at concurrency 1; at concurrenc
    Hostinger's 404 page, expected while the repo is private and unlisted; re-check after listing) and that it builds this compose file
    (it uses `build: .`). If Hostinger needs a prebuilt image, add a GHCR publish workflow on tags and switch
    compose to `image: ghcr.io/quandapro/leash:<version>`.
-3. Test with a real Claude Code session against a real API key (needs a key; mock-only so far).
+3. Real-provider tests: done for Claude Code on OpenRouter (see above). Still untested live: Anthropic direct,
+   Codex / OpenAI Responses, OpenAI chat clients (Cline, aider).
 4. v0.2 MCP firewall: Streamable HTTP MCP proxy, per-server tool allowlist, injection scan of tool output,
    package-registry check for install commands.
 5. v0.3: `leash connect` CLI, Postgres option, response cache. v1.0: TOTP, security audit, catalog listing.

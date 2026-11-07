@@ -71,3 +71,19 @@ Compose uses `build: .` until a GHCR image is published.
 ## 2026-11-07 CI pins actions by SHA
 actions/checkout v7.0.1 and actions/setup-node v7.1.0 pinned to commit SHAs; CI runs npm audit, check and
 the Docker e2e.
+
+## 2026-11-07 Prefer the cost the provider reports
+OpenRouter returns `usage.cost` (the amount it billed) on its Anthropic and OpenAI endpoints. Its prices vary by
+time of day and by upstream route: in a live DeepSeek test our static table was 12-50% off. When a response
+carries a finite, non-negative `usage.cost`, Leash records it and marks the price known; the price table is the
+fallback and still drives the budget pre-check estimate. The provider is admin-configured, so its billing
+report is trusted.
+
+## 2026-11-07 Claude Code session id comes from JSON metadata
+Claude Code 2.1+ sends `metadata.user_id` as a JSON string with `session_id` (the old
+`..._session_<uuid>` form is still parsed). The id must match `[0-9a-f-]{8,64}` or it is ignored. Session labels
+and the hash fallback strip `<system-reminder>` blocks, which Claude Code injects ahead of the user's prompt.
+
+## 2026-11-07 Usage fields only overwrite with numbers
+Gateways send `null` for usage fields they fill in later stream events (OpenRouter sends
+`cache_read_input_tokens: null` in `message_start`). A `null` never overwrites a count already seen.

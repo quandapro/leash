@@ -51,12 +51,21 @@ export const emptyUsage = (): Usage => ({ input: 0, output: 0, cacheWrite: 0, ca
 type Obj = Record<string, unknown>;
 const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+// OpenRouter and some gateways report what they billed; providers that don't simply omit it.
+function reportedCost(u: Obj, into: Usage): void {
+  if (isNum(u.cost) && u.cost >= 0) into.reportedCost = u.cost;
+}
+
 function fromAnthropic(u: Obj | undefined, into: Usage): void {
   if (!u) return;
-  if ('input_tokens' in u) into.input = n(u.input_tokens);
-  if ('cache_creation_input_tokens' in u) into.cacheWrite = n(u.cache_creation_input_tokens);
-  if ('cache_read_input_tokens' in u) into.cacheRead = n(u.cache_read_input_tokens);
-  if ('output_tokens' in u) into.output = n(u.output_tokens);
+  // Only numbers overwrite: gateways send `null` for fields they fill in later events.
+  if (isNum(u.input_tokens)) into.input = u.input_tokens;
+  if (isNum(u.cache_creation_input_tokens)) into.cacheWrite = u.cache_creation_input_tokens;
+  if (isNum(u.cache_read_input_tokens)) into.cacheRead = u.cache_read_input_tokens;
+  if (isNum(u.output_tokens)) into.output = u.output_tokens;
+  reportedCost(u, into);
 }
 
 function fromOpenAIChat(u: Obj | undefined, into: Usage): void {
@@ -65,6 +74,7 @@ function fromOpenAIChat(u: Obj | undefined, into: Usage): void {
   into.input = Math.max(0, n(u.prompt_tokens) - cached);
   into.cacheRead = cached;
   into.output = n(u.completion_tokens);
+  reportedCost(u, into);
 }
 
 function fromResponses(u: Obj | undefined, into: Usage): void {
@@ -73,6 +83,7 @@ function fromResponses(u: Obj | undefined, into: Usage): void {
   into.input = Math.max(0, n(u.input_tokens) - cached);
   into.cacheRead = cached;
   into.output = n(u.output_tokens);
+  reportedCost(u, into);
 }
 
 /** Usage from a complete JSON response body. */

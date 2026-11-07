@@ -119,6 +119,18 @@ test('loop rules: repeated calls, rereads and identical failures', () => {
 
   const cc = extract('anthropic', { metadata: { user_id: 'user_abc_account__session_0f8c2a6e-1111-4222-8333-944445555666' }, messages: [] });
   assert.equal(cc.clientSessionId, '0f8c2a6e-1111-4222-8333-944445555666');
+
+  // Claude Code 2.1+: user_id is a JSON string, and the first user turn starts with injected reminders.
+  const cc2 = extract('anthropic', {
+    metadata: { user_id: JSON.stringify({ device_id: 'ab12', account_uuid: '', session_id: '7cdd323c-5a0f-4b9f-9f5e-b2a178f1f3de' }) },
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: '<system-reminder>\nCodebase and user instructions are shown below.\n</system-reminder>' },
+      { type: 'text', text: 'Fix the failing invoice tests' },
+    ] }],
+  });
+  assert.equal(cc2.clientSessionId, '7cdd323c-5a0f-4b9f-9f5e-b2a178f1f3de');
+  assert.equal(cc2.firstUserText, 'Fix the failing invoice tests');
+  assert.equal(extract('anthropic', { metadata: { user_id: '{"session_id":"../../etc"}' }, messages: [] }).clientSessionId, null);
 });
 
 test('pricing: built-in Claude rates, prefixes, overrides and fail-safe fallback', () => {
@@ -173,6 +185,15 @@ test('SSE parser handles split chunks and CRLF; stream usage is cumulative', () 
   p.end();
   assert.deepEqual(m.usage, { input: 10, output: 7, cacheWrite: 0, cacheRead: 5 });
   assert.equal(m.model, 'claude-x');
+
+  // OpenRouter's Anthropic endpoint: nulls in message_start, real counts and billed cost in message_delta.
+  const o = new StreamUsage('anthropic');
+  o.onEvent('message_start', '{"type":"message_start","message":{"model":"deepseek/x","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null}}}');
+  o.onEvent('message_delta', '{"type":"message_delta","usage":{"input_tokens":51,"output_tokens":356,"cache_creation_input_tokens":null,"cache_read_input_tokens":15872,"cost":0.000342422}}');
+  assert.deepEqual(o.usage, { input: 51, output: 356, cacheWrite: 0, cacheRead: 15872, reportedCost: 0.000342422 });
+  // A later null never wipes a count already seen.
+  o.onEvent('message_delta', '{"type":"message_delta","usage":{"cache_read_input_tokens":null}}');
+  assert.equal(o.usage.cacheRead, 15872);
 });
 
 test('html templates escape interpolations', () => {
