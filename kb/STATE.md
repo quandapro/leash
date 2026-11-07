@@ -41,6 +41,7 @@ on :8790 (token `demo-admin-token-0123456789abcdef`). PRODUCT.md / DESIGN.md hol
 impeccable skill is copied (gitignored) into `.claude/skills/impeccable/` from the owner's EasyBaby project.
 Open design items: keyboard shortcuts / session search, live updates instead of timed refresh, a page explaining
 each guard rule.
+Fonts are binary files: `.gitattributes` marks `*.woff2 binary` so the repo-wide `eol=lf` rule never touches them.
 
 ## Next steps (in order)
 
