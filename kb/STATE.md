@@ -27,10 +27,11 @@ Measured: added latency ~0.8 ms p50 / 1.3 ms p95 at concurrency 1; at concurrenc
 
 ## Next steps (in order)
 
-1. Owner action, cannot be done by the agent: list the app in hPanel Open-Source Partners ("List your app",
-   connect the public repo `quandapro/leash`), get the partner code, then add `&ref=<code>` to the README Deploy
-   button. The agent's permission classifier refuses opening that hPanel form. The repo went public on 2026-11-07
-   via `gh repo edit` at the owner's request (history scanned for secrets first: clean), which also unblocked CI.
+1. Hostinger Open-Source Partners is not open yet; "List your app" is a waitlist. Leash was submitted to it on
+   2026-11-07 from the owner's hPanel (repo URL, name, description, "under 50" self-hosters, deployed via Docker).
+   Hostinger emails the hPanel account address at launch. Then: get the partner code, add `&ref=<code>` to the
+   README Deploy button. The repo went public on 2026-11-07 via `gh repo edit` (history scanned for secrets
+   first: clean), which also unblocked CI.
 2. Verify the Hostinger one-click flow (as of 2026-11-07 `hostinger.com/deploy?template=quandapro/leash` returns
    Hostinger's 404 page, expected while the repo is private and unlisted; re-check after listing) and that it builds this compose file
    (it uses `build: .`). If Hostinger needs a prebuilt image, add a GHCR publish workflow on tags and switch
