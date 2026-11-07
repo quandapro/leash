@@ -31,7 +31,12 @@ Measured: added latency ~0.8 ms p50 / 1.3 ms p95 at concurrency 1; at concurrenc
    does not start ("recent account payments have failed or your spending limit needs to be increased",
    run 42360293356); going public gives free minutes, otherwise fix billing. Local `npm run check` and
    `npm run e2e` are the source of truth until CI runs.
-2. Verify the Hostinger one-click flow (`hostinger.com/deploy?template=quandapro/leash`) builds this compose file
+   2026-11-07: tried both in the owner's Chrome (signed in to GitHub and hPanel). The agent's permission
+   classifier refused flipping the repo public and opening the hPanel "List your app" form, so these stay with
+   the owner. Git history was scanned for secret patterns first: clean. The hPanel listing step connects a
+   public GitHub repo, so the repo must go public before listing.
+2. Verify the Hostinger one-click flow (as of 2026-11-07 `hostinger.com/deploy?template=quandapro/leash` returns
+   Hostinger's 404 page, expected while the repo is private and unlisted; re-check after listing) (`hostinger.com/deploy?template=quandapro/leash`) builds this compose file
    (it uses `build: .`). If Hostinger needs a prebuilt image, add a GHCR publish workflow on tags and switch
    compose to `image: ghcr.io/quandapro/leash:<version>`.
 3. Test with a real Claude Code session against a real API key (needs a key; mock-only so far).
