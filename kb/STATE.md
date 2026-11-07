@@ -27,7 +27,10 @@ Measured: added latency ~0.8 ms p50 / 1.3 ms p95 at concurrency 1; at concurrenc
 ## Next steps (in order)
 
 1. Owner action, cannot be done by the agent: join Hostinger Open-Source Partners, get the partner code, add
-   `&ref=<code>` to the README Deploy button; flip the GitHub repo public.
+   `&ref=<code>` to the README Deploy button; flip the GitHub repo public. GitHub Actions on the private repo
+   does not start ("recent account payments have failed or your spending limit needs to be increased",
+   run 42360293356); going public gives free minutes, otherwise fix billing. Local `npm run check` and
+   `npm run e2e` are the source of truth until CI runs.
 2. Verify the Hostinger one-click flow (`hostinger.com/deploy?template=quandapro/leash`) builds this compose file
    (it uses `build: .`). If Hostinger needs a prebuilt image, add a GHCR publish workflow on tags and switch
    compose to `image: ghcr.io/quandapro/leash:<version>`.
