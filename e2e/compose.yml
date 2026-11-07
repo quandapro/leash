@@ -1,0 +1,50 @@
+# E2E stack: the production image (limited to 2 vCPU / 4 GB) between a test runner and a mock provider.
+name: leash-e2e
+services:
+  mock:
+    image: node:26-alpine
+    working_dir: /repo
+    volumes: ["..:/repo:ro"]
+    environment: { PORT: "9090" }
+    command: ["node", "--disable-warning=ExperimentalWarning", "e2e/mock-upstream.ts"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/__received"]
+      interval: 2s
+      retries: 20
+  leash:
+    build: ..
+    image: leash:e2e
+    depends_on:
+      mock: { condition: service_healthy }
+    environment:
+      LEASH_ADMIN_TOKEN: e2e-admin-token-0123456789abcdef
+      LEASH_SECRET: e2e-secret-0123456789abcdef0123456789abcdef
+      LEASH_ANTHROPIC_KEY: mock-anthropic-provider-key
+      LEASH_ANTHROPIC_BASE_URL: http://mock:9090
+      LEASH_OPENAI_KEY: mock-openai-provider-key
+      LEASH_OPENAI_BASE_URL: http://mock:9090
+      LEASH_ALLOW_HTTP_UPSTREAM: "1"
+      LEASH_PUBLIC_URL: http://localhost:18080
+    ports: ["127.0.0.1:18080:8080"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cpus: 2
+    mem_limit: 4g
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      retries: 30
+  runner:
+    image: node:26-alpine
+    working_dir: /repo
+    volumes: ["..:/repo:ro"]
+    depends_on:
+      leash: { condition: service_healthy }
+    environment:
+      LEASH_URL: http://leash:8080
+      MOCK_URL: http://mock:9090
+      ADMIN: e2e-admin-token-0123456789abcdef
+    command: ["node", "--disable-warning=ExperimentalWarning", "e2e/runner.ts"]
+    profiles: ["run"]

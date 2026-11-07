@@ -1,0 +1,7 @@
+# Caddy terminates TLS (automatic Let's Encrypt when LEASH_DOMAIN is a real domain).
+{$LEASH_DOMAIN} {
+	encode gzip
+	reverse_proxy leash:8080 {
+		flush_interval -1
+	}
+}

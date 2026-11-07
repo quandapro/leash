@@ -1,0 +1,22 @@
+{
+  "name": "leash-gateway",
+  "version": "0.1.0",
+  "description": "Self-hosted budget, loop and secret guard for AI agents. Zero runtime dependencies.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts",
+    "e2e": "node --disable-warning=ExperimentalWarning e2e/run.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2"
+  }
+}

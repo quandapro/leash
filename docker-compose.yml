@@ -1,0 +1,38 @@
+# Production stack: Leash behind Caddy (HTTPS). Set the variables in .env or your host's UI.
+services:
+  leash:
+    build: .
+    image: leash:local
+    restart: unless-stopped
+    environment:
+      LEASH_ADMIN_TOKEN: ${LEASH_ADMIN_TOKEN:?Set LEASH_ADMIN_TOKEN (openssl rand -hex 24)}
+      LEASH_SECRET: ${LEASH_SECRET:?Set LEASH_SECRET (openssl rand -hex 32)}
+      LEASH_PUBLIC_URL: https://${LEASH_DOMAIN:?Set LEASH_DOMAIN to the domain pointing at this server}
+      LEASH_TRUST_PROXY: "1"
+      LEASH_ANTHROPIC_KEY: ${LEASH_ANTHROPIC_KEY:-}
+      LEASH_OPENAI_KEY: ${LEASH_OPENAI_KEY:-}
+      LEASH_OPENAI_BASE_URL: ${LEASH_OPENAI_BASE_URL:-https://api.openai.com/v1}
+      LEASH_RETENTION_DAYS: ${LEASH_RETENTION_DAYS:-30}
+    volumes:
+      - leash-data:/data
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cpus: 2
+    mem_limit: 4g
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [leash]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      LEASH_DOMAIN: ${LEASH_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  leash-data:
+  caddy-data:
+  caddy-config:
