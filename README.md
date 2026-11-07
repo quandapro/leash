@@ -2,6 +2,8 @@
 
 **A self-hosted gateway that keeps AI agents on a leash: spending caps, loop kill switch, secret redaction.**
 
+[Website](https://quandapro.github.io/products/leash/) · [Security](SECURITY.md) · MIT
+
 Point Claude Code, Codex, Cline, aider, OpenClaw or Hermes at Leash instead of the model API. Every request
 passes four checks before it reaches the provider, and every response feeds a loop detector:
 

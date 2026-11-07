@@ -7,6 +7,9 @@ Last updated: 2026-11-07
 v0.1.0 is built, tested end to end in Docker, and committed. Repo: `D:\workspace\Quandapro\leash`, GitHub
 `quandapro/leash` (public since 2026-11-07). GitHub CI is green (run 42366690479: audit, typecheck, tests,
 Docker e2e, 58 s).
+Landing page: https://quandapro.github.io/products/leash/ (source `products/leash/index.html` in the
+`quandapro/quandapro.github.io` repo, a single static file styled like the owner's portfolio; keep its claims in
+sync with the README). It is also the GitHub repo homepage.
 
 Done and verified (unit tests + `npm run e2e` in a 2 vCPU / 4 GB container):
 
