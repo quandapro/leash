@@ -5,7 +5,8 @@ Last updated: 2026-11-07
 ## Where things stand
 
 v0.1.0 is built, tested end to end in Docker, and committed. Repo: `D:\workspace\Quandapro\leash`, GitHub
-`quandapro/leash` (private until the owner makes it public).
+`quandapro/leash` (public since 2026-11-07). GitHub CI is green (run 42366690479: audit, typecheck, tests,
+Docker e2e, 58 s).
 
 Done and verified (unit tests + `npm run e2e` in a 2 vCPU / 4 GB container):
 
@@ -26,17 +27,12 @@ Measured: added latency ~0.8 ms p50 / 1.3 ms p95 at concurrency 1; at concurrenc
 
 ## Next steps (in order)
 
-1. Owner action, cannot be done by the agent: join Hostinger Open-Source Partners, get the partner code, add
-   `&ref=<code>` to the README Deploy button; flip the GitHub repo public. GitHub Actions on the private repo
-   does not start ("recent account payments have failed or your spending limit needs to be increased",
-   run 42360293356); going public gives free minutes, otherwise fix billing. Local `npm run check` and
-   `npm run e2e` are the source of truth until CI runs.
-   2026-11-07: tried both in the owner's Chrome (signed in to GitHub and hPanel). The agent's permission
-   classifier refused flipping the repo public and opening the hPanel "List your app" form, so these stay with
-   the owner. Git history was scanned for secret patterns first: clean. The hPanel listing step connects a
-   public GitHub repo, so the repo must go public before listing.
+1. Owner action, cannot be done by the agent: list the app in hPanel Open-Source Partners ("List your app",
+   connect the public repo `quandapro/leash`), get the partner code, then add `&ref=<code>` to the README Deploy
+   button. The agent's permission classifier refuses opening that hPanel form. The repo went public on 2026-11-07
+   via `gh repo edit` at the owner's request (history scanned for secrets first: clean), which also unblocked CI.
 2. Verify the Hostinger one-click flow (as of 2026-11-07 `hostinger.com/deploy?template=quandapro/leash` returns
-   Hostinger's 404 page, expected while the repo is private and unlisted; re-check after listing) (`hostinger.com/deploy?template=quandapro/leash`) builds this compose file
+   Hostinger's 404 page, expected while the repo is private and unlisted; re-check after listing) and that it builds this compose file
    (it uses `build: .`). If Hostinger needs a prebuilt image, add a GHCR publish workflow on tags and switch
    compose to `image: ghcr.io/quandapro/leash:<version>`.
 3. Test with a real Claude Code session against a real API key (needs a key; mock-only so far).
