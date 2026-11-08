@@ -7,7 +7,7 @@ import type { Alerter } from '../alerts.ts';
 import type { PriceBook } from '../guard/pricing.ts';
 import { globalDailyLimit } from '../guard/budget.ts';
 import { HttpError, readBody, redirect, sendHtml, sendJson } from '../http.ts';
-import { CSS, FONTS, JS, LOGO } from './assets.ts';
+import { CSS, FONTS, JS } from './assets.ts';
 
 // Content hash in asset URLs, so an upgrade never shows a page with last version's cached stylesheet.
 const V = sha256(CSS + JS).slice(0, 10);
@@ -36,7 +36,7 @@ interface Page {
 const MESSAGES: Record<string, string> = {
   provider_added: 'Provider added.', provider_updated: 'Provider key replaced.', provider_deleted: 'Provider deleted.',
   provider_in_use: 'Revoke the keys that use this provider first.', key_revoked: 'Key revoked. Agents using it are now refused.',
-  key_updated: 'Policy saved.', session_resumed: 'Session resumed. Earlier repetitions no longer count toward loop rules.',
+  key_updated: 'Policy saved.', session_paused: 'Session paused. Its next request is refused until you resume it.', session_resumed: 'Session resumed. Earlier repetitions no longer count toward loop rules.',
   alert_resolved: 'Alert resolved.', alerts_resolved: 'All open alerts resolved.', settings_saved: 'Notification settings saved.',
   price_saved: 'Price saved.', price_deleted: 'Price removed.', test_sent: 'Test alert sent.', budget_saved: 'Daily cap saved.',
 };
@@ -46,7 +46,7 @@ const RULES: Record<string, string> = {
   repeated_call: 'Repeated tool call', file_reread: 'Same file read again and again', identical_failure: 'Same failure repeated',
   spend_velocity: 'Spending fast', turn_ceiling: 'Very long session', budget: 'Budget reached', secret_blocked: 'Secret blocked',
   secret_redacted: 'Secret redacted', unpriced_model: 'Model has no price', test: 'Test alert',
-  session_blocked: 'Session paused', secret: 'Secret in prompt',
+  session_blocked: 'Refused while paused', secret: 'Secret in prompt', budget_80: 'Budget at 80%',
 };
 const GUARD_SECRETS: Record<string, string> = { redact: 'redacts secrets', block: 'blocks secrets', log: 'logs secrets' };
 const GUARD_LOOPS: Record<string, string> = { enforce: 'pauses loops', warn: 'warns on loops', off: 'loop rules off' };
@@ -60,22 +60,25 @@ function state(map: Record<string, [string, string]>, key: string): Safe {
   return html`<span class="state ${cls}">${label}</span>`;
 }
 
-const NAV: [string, string][] = [['/', 'Overview'], ['/sessions', 'Sessions'], ['/keys', 'Keys'], ['/providers', 'Providers'], ['/alerts', 'Alerts']];
+const NAV: [string, string][] = [['/', 'Board'], ['/sessions', 'Sessions'], ['/keys', 'Keys'], ['/providers', 'Providers'], ['/alerts', 'Alerts']];
 
 function layout(p: Page, title: string, active: string, body: Safe, opts: { refresh?: number } = {}): string {
   const msg = p.url.searchParams.get('m');
   const err = p.url.searchParams.get('e');
+  const open = p.ctx.store.openAlertCount();
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} · Leash</title>${opts.refresh ? html`<meta http-equiv="refresh" content="${opts.refresh}">` : ''}
 <link rel="stylesheet" href="/static/app.css?v=${V}"><script src="/static/app.js?v=${V}" defer></script></head><body>
-<header class="bar"><a class="brand" href="/">${new Safe(LOGO)}Leash</a>
-<nav aria-label="Main">${NAV.map(([href, label]) => html`<a href="${href}"${active === href ? new Safe(' aria-current="page"') : ''}>${label}</a>`)}</nav>
+<header class="bar"><div><a class="word" href="/" aria-label="Leash board">leash<span>.</span></a>
+<nav aria-label="Main">${NAV.map(([href, label]) => html`<a href="${href}"${active === href ? new Safe(' aria-current="page"') : ''}>${label}${href === '/alerts' && open ? html`<b>${int(open)}</b>` : ''}</a>`)}</nav>
 <span class="spacer"></span>
-<form class="inline" method="post" action="/logout"><input type="hidden" name="_csrf" value="${p.csrf}"><button class="quiet sm">Sign out</button></form></header>
+<form class="inline signout" method="post" action="/logout"><input type="hidden" name="_csrf" value="${p.csrf}"><button class="quiet sm">Sign out</button></form></div></header>
 <main class="page">${msg && MESSAGES[msg] ? html`<div class="banner ok" role="status"><p class="msg">${MESSAGES[msg]}</p></div>` : ''}${err && MESSAGES[err] ? html`<div class="banner trip" role="alert"><p class="msg">${MESSAGES[err]}</p></div>` : ''}${body}</main></body></html>`.value;
 }
 
 const hidden = (p: Page) => html`<input type="hidden" name="_csrf" value="${p.csrf}">`;
+const hhmm = (ts: number) => when(ts).slice(11, 16);
+const shortId = (id: string) => (id.length > 12 ? id.slice(0, 8) : id);
 
 /** Spend against a cap. The notch marks 80%, where Leash starts warning. */
 function meter(spent: number, cap: number | null, label: string): Safe {
@@ -87,112 +90,209 @@ function meter(spent: number, cap: number | null, label: string): Safe {
 <span class="val">${usd(spent)} <span class="of">of ${usd(cap)} ${label}</span>${ratio >= 1 ? html` <span class="tag trip">cap reached</span>` : ''}</span></div>`;
 }
 
-function spark(days: { day: number; spend: number }[], now: number): Safe {
-  const start = startOfDayUtc(now) - 13 * 86_400_000;
-  const series = Array.from({ length: 14 }, (_, i) => {
-    const day = start + i * 86_400_000;
-    return { day, spend: days.find((d) => d.day === day)?.spend ?? 0 };
-  });
-  const max = Math.max(...series.map((s) => s.spend), 0.000001);
-  const total = series.reduce((a, s) => a + s.spend, 0);
-  const label = `Spend per day for the last 14 days, ${usd(total)} in total. ` + series.filter((s) => s.spend > 0).map((s) => `${new Date(s.day).toISOString().slice(5, 10)}: ${usd(s.spend)}`).join(', ');
-  return html`<svg class="spark" viewBox="0 0 168 32" role="img" aria-label="${label}">${series.map((s, i) => {
-    const h = s.spend > 0 ? Math.max(2, (s.spend / max) * 32) : 1;
-    return html`<rect class="${i === 13 ? 'today' : ''}" x="${i * 12}" y="${(32 - h).toFixed(1)}" width="9" height="${h.toFixed(1)}" rx="1"><title>${new Date(s.day).toISOString().slice(0, 10)}: ${usd(s.spend)}</title></rect>`;
-  })}</svg>`;
+// ---------- Session strips ----------
+
+interface Tape { bars: { tok: number; fail: boolean }[]; fails: number; refused: number; model: string | null; first: number | null; last: number | null }
+
+/** One bar per request, height by tokens. A bar is marked when a tool result in it failed or Leash refused it. */
+function tapeData(store: Store, id: string, limit: number): Tape {
+  const reqs = store.sessionTape(id, limit);
+  if (reqs.length === 0) return { bars: [], fails: 0, refused: 0, model: null, first: null, last: null };
+  const errs = store.sessionFailureTimes(id, reqs[0]!.ts);
+  const bars = reqs.map((r) => ({ tok: r.tok, fail: !!r.blocked }));
+  let fails = 0;
+  for (const t of errs) {
+    const i = reqs.findIndex((r) => r.ts >= t);
+    if (i >= 0) { bars[i]!.fail = true; fails++; }
+  }
+  return { bars, fails, refused: reqs.filter((r) => r.blocked).length, model: reqs.at(-1)!.model, first: reqs[0]!.ts, last: reqs.at(-1)!.ts };
 }
 
-// ---------- Pages ----------
+function bars(t: Tape, w: number, h: number, slots: number, gap: number): Safe {
+  const max = Math.max(...t.bars.map((b) => b.tok), 1);
+  const step = w / Math.max(slots, t.bars.length);
+  return html`${t.bars.map((b, i) => {
+    const bh = Math.max(2, Math.round((b.tok / max) * h));
+    return html`<rect${b.fail ? new Safe(' class="fail"') : ''} x="${(i * step).toFixed(1)}" y="${h - bh}" width="${Math.max(1.5, step - gap).toFixed(1)}" height="${bh}"/>`;
+  })}`;
+}
 
-interface Need { kind: 'paused' | 'alert' | 'price'; state: Safe; title: Safe | string; href?: string; detail: string; meta: Safe; acts: Safe }
+function tape(t: Tape, caption = true): Safe {
+  if (t.bars.length === 0) return html`<div class="tape"><small>no requests yet</small></div>`;
+  return html`<div class="tape"><svg viewBox="0 0 168 34" preserveAspectRatio="none" aria-hidden="true">${bars(t, 168, 34, 24, 1.5)}</svg>
+${caption ? html`<small>${t.fails || t.refused ? html`<b>${[t.fails ? `${int(t.fails)} failed` : '', t.refused ? `${int(t.refused)} refused` : ''].filter(Boolean).join(', ')}</b>` : 'no failures'}</small>` : ''}</div>`;
+}
 
-/** Everything that waits on a person: paused sessions, open blocks and warnings, unpriced models. */
-function needsYou(p: Page, now: number): Need[] {
+type SessionRow = ReturnType<Store['listSessions']>[number];
+
+/** The guard rule behind a pause, for linking to its explanation. */
+function pauseRule(store: Store, id: string, reason: string | null): string | null {
+  const blocks = store.sessionAlerts(id).filter((x) => x.level === 'block');
+  const a = blocks.findLast((x) => x.message === reason) ?? blocks.at(-1);
+  return a ? a.rule : null;
+}
+
+function ruleLink(rule: string | null): Safe | string {
+  return rule && RULE_HELP[rule] ? html` <a href="/guards#${rule}">${ruleName(rule)}</a>` : '';
+}
+
+function slip(p: Page, s: SessionRow, now: number): Safe {
+  const { store } = p.ctx;
+  const t = tapeData(store, s.id, 60);
+  const href = `/sessions/${encodeURIComponent(s.id)}`;
+  return html`<article class="slip"><div><span class="state trip">Paused ${ago(s.last_at, now)}</span>
+<h3 class="task"><a href="${href}">${s.label || 'Untitled session'}</a></h3>
+<div class="meta">${s.key_name ?? 'deleted key'}${t.model ? html`<span class="sep">·</span>${t.model}` : ''}<span class="sep">·</span>${shortId(s.id)}</div>
+<p class="why">${s.status_reason ?? 'Paused by a guard rule.'}${ruleLink(pauseRule(store, s.id, s.status_reason))}</p></div>
+${tape(t)}<div class="fig"><span class="money">${usd(s.spend)}</span><span class="n">${int(s.requests)} requests</span></div>
+<div class="foot"><form class="inline" method="post" action="${href}/resume">${hidden(p)}<button class="primary">Resume</button></form><a class="btn quiet" href="${href}">Open replay</a>
+<p>The agent gets a refusal until you resume it. Earlier repeats stop counting.</p></div></article>`;
+}
+
+function runningRow(p: Page, s: SessionRow, now: number): Safe {
+  const { store } = p.ctx;
+  const t = tapeData(store, s.id, 60);
+  const call = store.lastToolCall(s.id);
+  const href = `/sessions/${encodeURIComponent(s.id)}`;
+  const st = s.status === 'warned' ? html`<span class="state caution">Warned</span>` : html`<span class="state ok">Running</span>`;
+  return html`<li class="row"><div>${st}<h3 class="task"><a href="${href}">${s.label || 'Untitled session'}</a></h3>
+<div class="last">${call ? html`${call.name} ${call.path ?? call.preview.slice(0, 80)} ` : ''}<span>${call ? '· ' : ''}${ago(s.last_at, now)} · ${s.key_name ?? 'deleted key'}${t.model ? ` · ${t.model}` : ''}</span></div>
+${s.status === 'warned' && s.status_reason ? html`<p class="why caution">${s.status_reason}</p>` : ''}</div>
+${tape(t)}<div class="fig"><span class="money">${usd(s.spend)}</span><span class="n">${int(s.requests)} requests</span></div>
+<div class="acts"><form class="inline" method="post" action="${href}/pause">${hidden(p)}<button>Pause</button></form></div></li>`;
+}
+
+function doneRow(p: Page, s: SessionRow): Safe {
+  const t = tapeData(p.ctx.store, s.id, 40);
+  return html`<li class="row done"><div><h3 class="task"><a href="/sessions/${encodeURIComponent(s.id)}">${s.label || 'Untitled session'}</a></h3>
+<div class="meta">${s.key_name ?? 'deleted key'}${t.model ? html`<span class="sep">·</span>${t.model}` : ''}<span class="sep">·</span>${hhmm(s.last_at)} UTC</div></div>
+${tape(t, false)}<div class="fig"><span class="money">${usd(s.spend)}</span><span class="n">${int(s.requests)} requests</span></div><div></div></li>`;
+}
+
+// ---------- Board ----------
+
+interface Flag { when: number; title: Safe | string; detail: string; acts: Safe }
+
+/** What needs a person besides paused sessions: open blocks and warnings, unpriced models. */
+function flags(p: Page, paused: Set<string>): Flag[] {
   const { store, prices } = p.ctx;
-  const needs: Need[] = [];
-  const paused = store.listSessions(500).filter((s) => s.status === 'blocked');
-  const pausedIds = new Set(paused.map((s) => s.id));
-  for (const s of paused) {
-    const href = `/sessions/${encodeURIComponent(s.id)}`;
-    needs.push({
-      kind: 'paused', state: state(SESSION_STATE, 'blocked'), title: s.label || 'Session', href, detail: s.status_reason ?? 'Paused by a guard rule.',
-      meta: html`${s.key_name ?? 'unknown key'}<span class="sep">·</span>${int(s.requests)} requests<span class="sep">·</span>${usd(s.spend)}<span class="sep">·</span>${ago(s.last_at, now)}`,
-      acts: html`<a class="btn sm" href="${href}">Review</a><form class="inline" method="post" action="${href}/resume">${hidden(p)}<button class="primary sm">Resume</button></form>`,
-    });
-  }
+  const out: Flag[] = [];
   for (const a of store.listAlerts(200)) {
-    if (a.resolved_at || a.level === 'info' || (a.session_id && pausedIds.has(a.session_id))) continue;
-    needs.push({
-      kind: 'alert', state: state(LEVEL_STATE, a.level), title: ruleName(a.rule), href: a.session_id ? `/sessions/${encodeURIComponent(a.session_id)}` : a.key_id ? `/keys/${a.key_id}` : undefined,
-      detail: a.message, meta: html`${a.key_name ?? 'all keys'}<span class="sep">·</span>${ago(a.ts, now)}`,
-      acts: html`<form class="inline" method="post" action="/alerts/${a.id}/resolve">${hidden(p)}<input type="hidden" name="next" value="/"><button class="sm">Resolve</button></form>`,
+    if (a.resolved_at || a.level === 'info' || (a.session_id && paused.has(a.session_id))) continue;
+    const target = a.session_id ? html`<a href="/sessions/${encodeURIComponent(a.session_id)}">Open session</a>` : a.key_id ? html`<a href="/keys/${a.key_id}">Open key</a>` : '';
+    out.push({
+      when: a.ts, title: `${ruleName(a.rule)}${a.key_name ? ` · ${a.key_name}` : ''}`, detail: a.message,
+      acts: html`${target}${RULE_HELP[a.rule] ? html`<a href="/guards#${a.rule}">About this rule</a>` : ''}<form class="inline" method="post" action="/alerts/${a.id}/resolve">${hidden(p)}<input type="hidden" name="next" value="/"><button class="link">Resolve</button></form>`,
     });
   }
-  const unpriced = store.unpricedModels().filter((u) => !prices.rate('openai', u.model).known && !prices.rate('anthropic', u.model).known);
-  for (const u of unpriced) {
-    needs.push({
-      kind: 'price', state: state(LEVEL_STATE, 'warn'), title: html`<span class="mono">${u.model}</span> has no price`, detail: `Charged at the fail-safe rate so budgets stay safe. ${int(u.n)} requests so far.`,
-      meta: html`Budgets may trip early`, acts: html`<a class="btn sm" href="/providers#prices">Set price</a>`,
-    });
+  for (const u of store.unpricedModels()) {
+    if (prices.rate('openai', u.model).known || prices.rate('anthropic', u.model).known) continue;
+    out.push({ when: 0, title: html`<span class="mono">${u.model}</span> has no price`, detail: `Charged at the fail-safe rate so budgets stay safe, which may stop agents early. ${int(u.n)} requests so far.`, acts: html`<a href="/providers#prices">Set a price</a>` });
   }
-  return needs;
+  return out;
 }
 
-function ledger(items: Need[]): Safe {
-  return html`<ul class="ledger">${items.map((n) => html`<li>${n.state}<div class="what">${n.href ? html`<a class="title" href="${n.href}">${n.title}</a>` : html`<div class="title">${n.title}</div>`}
-<p class="detail">${n.detail}</p><p class="meta">${n.meta}</p></div><div class="acts">${n.acts}</div></li>`)}</ul>`;
+function spendToday(p: Page, now: number): Safe {
+  const { store } = p.ctx;
+  const day = startOfDayUtc(now);
+  const total = store.totalSpendSince(day);
+  const month = store.totalSpendSince(startOfMonthUtc(now));
+  const cap = globalDailyLimit(store);
+  const keys = store.listKeys().map((k) => ({ k, spent: store.keySpendSince(k.id, day) })).filter((x) => x.spent > 0).sort((a, b) => b.spent - a.spent);
+  const shown = keys.slice(0, 3);
+  const rest = keys.slice(3).reduce((a, x) => a + x.spent, 0);
+  const scale = cap !== null && cap > 0 ? Math.max(cap, total) : total || 1;
+  const segs = [...shown.map((x, i) => ({ cls: x.k.daily_usd !== null && x.spent >= x.k.daily_usd ? 'kcap' : `k${i}`, v: x.spent })), ...(rest > 0 ? [{ cls: 'k2', v: rest }] : [])];
+  let x = 0;
+  const label = `${usd(total)} spent today${cap !== null ? ` of ${usd(cap)}` : ''}: ` + keys.map((k) => `${k.k.name} ${usd(k.spent)}`).join(', ');
+  return html`<section aria-labelledby="spend-h"><div class="sechead"><h2 id="spend-h">Spend today</h2><span>resets 00:00 UTC</span></div><div class="spend">
+<p class="spend-line"><span class="big">${usd(total)}</span><span>${cap !== null ? html`of the <span class="mono">${usd(cap)}</span> daily cap for all keys, warns at <span class="mono">${usd(cap * 0.8)}</span>` : html`no daily cap for all keys (<a href="/keys#cap">set one</a>)`}<span class="sep">·</span><span class="mono">${usd(month)}</span> this month</span></p>
+<svg class="track" viewBox="0 0 1000 22" preserveAspectRatio="none" role="img" aria-label="${label}"><rect class="bg" y="5" width="1000" height="12"/>${segs.map((s) => {
+    const w = (s.v / scale) * 1000;
+    const r = html`<rect class="${s.cls}" x="${x.toFixed(1)}" y="5" width="${Math.max(2, w).toFixed(1)}" height="12"/>`;
+    x += w;
+    return r;
+  })}${cap !== null && cap > 0 ? html`<line class="warn" x1="${((cap * 0.8) / scale) * 1000}" x2="${((cap * 0.8) / scale) * 1000}" y1="0" y2="22"/>` : ''}</svg>
+${cap !== null && cap > 0 ? html`<div class="axis">${[0, 0.25, 0.5, 0.75, 1].map((f) => html`<span>${usd(cap * f).replace(/\.00$/, '')}</span>`)}</div>` : ''}
+${keys.length ? html`<ul class="keys">${shown.map((k, i) => {
+    const capped = k.k.daily_usd !== null && k.spent >= k.k.daily_usd;
+    return html`<li${capped ? new Safe(' class="capped"') : ''}><i class="${capped ? 'kcap' : `k${i}`}"></i><a href="/keys/${k.k.id}">${k.k.name}</a> ${usd(k.spent)}${capped ? ', at its own cap' : ''}</li>`;
+  })}${rest > 0 ? html`<li><i class="k2"></i>${int(keys.length - 3)} other keys ${usd(rest)}</li>` : ''}</ul>` : ''}</div></section>`;
 }
 
-function overview(p: Page): string {
+function board(p: Page): string {
   const { store } = p.ctx;
   const now = Date.now();
-  const today = store.totalSpendSince(startOfDayUtc(now));
-  const month = store.totalSpendSince(startOfMonthUtc(now));
-  const active = store.activeSessionCount(now - 86_400_000);
-  const keys = store.listKeys().filter((k) => !k.revoked_at);
+  const all = store.listSessions(500);
+  const paused = all.filter((s) => s.status === 'blocked');
+  const running = all.filter((s) => s.status !== 'blocked' && now - s.last_at < 15 * 60_000);
+  const done = all.filter((s) => s.status !== 'blocked' && now - s.last_at >= 15 * 60_000 && s.last_at >= startOfDayUtc(now));
+  const other = flags(p, new Set(paused.map((s) => s.id)));
   const providers = store.listProviders();
-  const globalLimit = globalDailyLimit(store);
-  const needs = needsYou(p, now);
-  const paused = needs.filter((n) => n.kind === 'paused').length;
-  const other = needs.length - paused;
+  const keys = store.listKeys().filter((k) => !k.revoked_at);
+  const counts = `${int(running.length)} running, ${int(done.length)} finished today.`;
 
-  let headline: string;
-  if (providers.length === 0) headline = 'Leash is running. Add a provider to start.';
-  else if (needs.length === 0) headline = keys.length ? 'All quiet. Nothing needs you.' : 'Ready. Create a key for your first agent.';
-  else headline = [paused ? `${paused} session${paused > 1 ? 's' : ''} paused` : '', other ? `${other} alert${other > 1 ? 's' : ''} to review` : ''].filter(Boolean).join(', ') + '.';
+  let lead: Safe;
+  if (providers.length === 0) lead = html`Leash is running. Add a provider to start.`;
+  else if (keys.length === 0) lead = html`Ready. Create a key for your first agent.`;
+  else if (paused.length) lead = html`<b>${paused.length === 1 ? '1 agent is paused' : `${int(paused.length)} agents are paused`}</b> and waiting on you. ${counts}`;
+  else if (other.length) lead = html`<b>${other.length === 1 ? '1 thing to review' : `${int(other.length)} things to review`}</b>. ${counts}`;
+  else lead = html`All quiet. Nothing needs you. ${counts}`;
 
-  const body = html`<div class="status ${needs.length ? 'trip' : ''}"><span class="glyph" aria-hidden="true"></span><div>
-<h1>${headline}</h1>
-<p class="facts">${usd(today)} spent today${globalLimit !== null ? ` of ${usd(globalLimit)} cap` : ''}<span class="sep">·</span>${usd(month)} this month<span class="sep">·</span>${int(active)} session${active === 1 ? '' : 's'} in the last 24 h</p></div></div>
-<div class="spend">${spark(store.dailySpend(14, now), now)}<span class="spark-label">last 14 days</span></div>
-${providers.length === 0 ? html`<section><div class="empty"><strong>Connect a model API.</strong> Add your Anthropic or OpenAI-compatible key on the <a href="/providers">Providers</a> page, then create one Leash key per agent.</div></section>` : ''}
-${needs.length ? html`<section id="needs"><div class="sechead"><h2>Needs you<span class="count">${int(needs.length)}</span></h2></div>${ledger(needs)}</section>` : ''}
-${keys.length ? html`<section><div class="sechead"><h2>Keys</h2><a href="/keys">Manage keys</a></div><ul class="ledger">${keys.map((k) => html`<li><span class="state ${k.last_used_at && now - k.last_used_at < 3_600_000 ? 'ok' : 'idle'}">${k.last_used_at && now - k.last_used_at < 3_600_000 ? 'In use' : 'Idle'}</span>
-<div class="what"><a class="title" href="/keys/${k.id}">${k.name}</a><p class="meta">${k.provider_name}<span class="sep">·</span>last used ${ago(k.last_used_at, now)}</p></div>
-<div class="acts">${meter(store.keySpendSince(k.id, startOfDayUtc(now)), k.daily_usd, 'today')}</div></li>`)}</ul></section>` : ''}
-<section><div class="sechead"><h2>Recent sessions</h2><a href="/sessions">All sessions</a></div>${sessionsList(store.listSessions(8), now)}</section>`;
-  return layout(p, 'Overview', '/', body, { refresh: 30 });
+  const day = new Date(now).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  const body = html`<div class="head"><div><h1>${day}</h1><p>${lead}</p></div>
+<form class="find" method="get" action="/sessions" role="search"><input id="find" name="q" type="search" placeholder="Find a session, key or task" aria-label="Find a session, key or task"><kbd aria-hidden="true">/</kbd></form></div>
+${providers.length === 0 ? html`<div class="empty"><strong>Connect a model API.</strong> Add your Anthropic or OpenAI-compatible key on the <a href="/providers">Providers</a> page, then create one Leash key per agent.</div>` : ''}
+${providers.length && keys.length === 0 ? html`<div class="empty"><strong>Create a key.</strong> Each agent or machine gets its own Leash key, with its own budget, on the <a href="/keys">Keys</a> page.</div>` : ''}
+${spendToday(p, now)}
+<div class="cols"><div>
+${paused.length ? html`<section aria-labelledby="paused-h"><div class="sechead"><h2 id="paused-h">Paused, waiting on you</h2><span class="hot">${paused.length === 1 ? '1 session' : `${int(paused.length)} sessions`}</span></div>
+<div class="slips">${paused.map((s) => slip(p, s, now))}</div></section>` : ''}
+<section aria-labelledby="run-h"><div class="sechead"><h2 id="run-h">Running</h2><span>active in the last 15 minutes</span></div>
+${running.length ? html`<ul class="rows">${running.map((s) => runningRow(p, s, now))}</ul>` : html`<div class="empty">No agent has sent a request in the last 15 minutes.</div>`}</section>
+<section aria-labelledby="done-h"><div class="sechead"><h2 id="done-h">Finished today</h2><span>${int(done.length)} session${done.length === 1 ? '' : 's'} · ${usd(done.reduce((a, s) => a + s.spend, 0))}</span></div>
+${done.length ? html`<ul class="rows">${done.slice(0, 6).map((s) => doneRow(p, s))}</ul>${done.length > 6 ? html`<a class="more-link" href="/sessions">Show ${int(done.length - 6)} more</a>` : ''}` : html`<div class="empty">Nothing finished yet today.</div>`}</section>
+</div>
+<aside class="sec" aria-labelledby="flags-h"><div class="sechead"><h2 id="flags-h">Also flagged</h2><span>${int(other.length)} open</span></div>
+${other.length ? html`<ul class="flags">${other.map((f) => html`<li>${f.when ? html`<span class="when">${hhmm(f.when)} UTC · ${ago(f.when, now)}</span>` : ''}<h3>${f.title}</h3><p>${f.detail}</p><div class="acts">${f.acts}</div></li>`)}</ul>` : html`<p class="side-note">Nothing else needs you.</p>`}
+<p class="side-note">Paused sessions are on the board, not here. <a href="/alerts">All alerts</a> · <a href="/guards">How the guards work</a></p></aside></div>`;
+  return layout(p, 'Board', '/', body, { refresh: 30 });
 }
 
-function sessionsList(sessions: ReturnType<Store['listSessions']>, now: number): Safe {
+// ---------- Sessions ----------
+
+function sessionsList(p: Page, sessions: SessionRow[], now: number): Safe {
   if (sessions.length === 0) return html`<div class="empty">No sessions yet. One appears as soon as an agent sends its first request with a Leash key.</div>`;
-  return html`<ul class="ledger">${sessions.map((s) => html`<li>${state(SESSION_STATE, s.status)}<div class="what">
-<a class="title" href="/sessions/${encodeURIComponent(s.id)}">${s.label || s.id}</a>${s.status_reason && s.status !== 'active' ? html`<p class="detail">${s.status_reason}</p>` : ''}
-<p class="meta">${s.key_name ?? 'unknown key'}<span class="sep">·</span>${int(s.requests)} request${s.requests === 1 ? '' : 's'}<span class="sep">·</span>${ago(s.last_at, now)}</p></div>
-<div class="acts"><span>${usd(s.spend)}</span></div></li>`)}</ul>`;
+  return html`<ul class="rows">${sessions.map((s) => {
+    const t = tapeData(p.ctx.store, s.id, 40);
+    return html`<li class="row"><div>${state(SESSION_STATE, s.status)}<h3 class="task"><a href="/sessions/${encodeURIComponent(s.id)}">${s.label || 'Untitled session'}</a></h3>
+<div class="meta">${s.key_name ?? 'deleted key'}${t.model ? html`<span class="sep">·</span>${t.model}` : ''}<span class="sep">·</span>${ago(s.last_at, now)}<span class="sep">·</span>${shortId(s.id)}</div>
+${s.status_reason && s.status !== 'active' ? html`<p class="why${s.status === 'warned' ? ' caution' : ''}">${s.status_reason}</p>` : ''}</div>
+${tape(t)}<div class="fig"><span class="money">${usd(s.spend)}</span><span class="n">${int(s.requests)} requests</span></div><div></div></li>`;
+  })}</ul>`;
 }
 
 function sessionsPage(p: Page): string {
   const all = p.ctx.store.listSessions(500);
   const filter = p.url.searchParams.get('status') ?? '';
-  const shown = ['blocked', 'warned', 'active'].includes(filter) ? all.filter((s) => s.status === filter) : all;
+  const q = (p.url.searchParams.get('q') ?? '').trim().slice(0, 100);
+  const ql = q.toLowerCase();
+  const matched = ql ? all.filter((s) => [s.label, s.id, s.key_name ?? ''].some((v) => v.toLowerCase().includes(ql))) : all;
+  const shown = ['blocked', 'warned', 'active'].includes(filter) ? matched.filter((s) => s.status === filter) : matched;
   const counts = { blocked: 0, warned: 0, active: 0 } as Record<string, number>;
-  for (const s of all) counts[s.status] = (counts[s.status] ?? 0) + 1;
-  const tabs: [string, string][] = [['', `All ${all.length}`], ['blocked', `Paused ${counts.blocked}`], ['warned', `Warned ${counts.warned}`], ['active', `Running ${counts.active}`]];
-  const body = html`<div class="head"><div><h1>Sessions</h1><p>One row per agent conversation. A paused session stays paused until you resume it.</p></div></div>
-<nav class="filters" aria-label="Filter sessions">${tabs.map(([v, label]) => html`<a href="/sessions${v ? `?status=${v}` : ''}"${filter === v ? new Safe(' aria-current="true"') : ''}>${label}</a>`)}</nav>
-${sessionsList(shown.slice(0, 200), Date.now())}`;
-  return layout(p, 'Sessions', '/sessions', body, { refresh: 15 });
+  for (const s of matched) counts[s.status] = (counts[s.status] ?? 0) + 1;
+  const qs = (status: string) => {
+    const u = new URLSearchParams();
+    if (status) u.set('status', status);
+    if (q) u.set('q', q);
+    return u.size ? `?${u}` : '';
+  };
+  const tabs: [string, string][] = [['', `All ${matched.length}`], ['blocked', `Paused ${counts.blocked}`], ['warned', `Warned ${counts.warned}`], ['active', `Running ${counts.active}`]];
+  const body = html`<div class="head"><div><h1>Sessions</h1><p>One row per agent conversation, named by its first prompt. A paused session stays paused until you resume it.</p></div>
+<form class="find" method="get" action="/sessions" role="search">${filter ? html`<input type="hidden" name="status" value="${filter}">` : ''}<input id="find" name="q" type="search" value="${q}" placeholder="Find a session, key or task" aria-label="Find a session, key or task"><kbd aria-hidden="true">/</kbd></form></div>
+<nav class="filters" aria-label="Filter sessions">${tabs.map(([v, label]) => html`<a href="/sessions${qs(v)}"${filter === v ? new Safe(' aria-current="true"') : ''}>${label}</a>`)}</nav>
+${q && shown.length === 0 ? html`<div class="empty">No session matches “${q}”. <a href="/sessions">Show all sessions</a></div>` : sessionsList(p, shown.slice(0, 200), Date.now())}`;
+  return layout(p, 'Sessions', '/sessions', body, { refresh: q ? undefined : 15 });
 }
 
 interface Step { ts: number; tool: string; call: string; path: string | null; result: string | null; error: boolean; n: number }
@@ -222,6 +322,12 @@ function replaySteps(events: ReturnType<Store['sessionToolEvents']>): Step[] {
   return folded;
 }
 
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)]!;
+}
+
 function sessionPage(p: Page, id: string): string | null {
   const { store } = p.ctx;
   const s = store.getSession(id);
@@ -231,26 +337,70 @@ function sessionPage(p: Page, id: string): string | null {
   const reqs = store.sessionRequests(id);
   const steps = replaySteps(store.sessionToolEvents(id, 400));
   const alerts = store.sessionAlerts(id);
+  const t = tapeData(store, id, 200);
   const self = `/sessions/${encodeURIComponent(s.id)}`;
-  const body = html`<a class="back" href="/sessions">← Sessions</a>
-<div class="head"><div><h1>${s.label || 'Session'}</h1>
-<p class="facts">${state(SESSION_STATE, s.status)}<span class="sep">·</span>${key ? html`<a href="/keys/${key.id}">${key.name}</a>` : 'deleted key'}<span class="sep">·</span>${int(s.requests)} requests<span class="sep">·</span>${usd(s.spend)}<span class="sep">·</span>last active ${ago(s.last_at, now)}${s.resumed_at ? html`<span class="sep">·</span><span title="${when(s.resumed_at)}">resumed ${ago(s.resumed_at, now)}</span>` : ''}</p></div></div>
-${s.status === 'blocked' ? html`<div class="banner trip" role="alert"><div class="msg"><p><strong>Paused.</strong> ${s.status_reason}</p>
-<p class="muted">The agent gets a refusal until you resume. Resuming clears the repetitions counted so far.</p></div>
-<form method="post" action="${self}/resume">${hidden(p)}<button class="primary">Resume session</button></form></div>` : ''}
-${s.status === 'warned' ? html`<div class="banner caution"><div class="msg"><p><strong>Warning.</strong> ${s.status_reason}</p><p class="muted">Leash will pause the session if this keeps up.</p></div></div>` : ''}
-<section><div class="sechead"><h2>Replay<span class="count">${int(steps.length)} step${steps.length === 1 ? '' : 's'}</span></h2><span class="muted">oldest first, previews redacted</span></div>
-${steps.length === 0 ? html`<div class="empty">No tool calls yet. Plain chat requests show under Requests.</div>` : html`<ol class="replay">${steps.map((st) => html`<li class="${st.n >= 3 ? 'loop' : ''}"><span class="t">${when(st.ts).slice(11, 19)}</span><span class="tool">${st.tool}</span>
-<span class="call">${st.path ? html`<strong>${st.path}</strong> ` : ''}${st.call}</span><span class="n">${st.n > 1 ? `×${st.n}` : ''}</span>
-${st.result !== null ? html`<span class="res ${st.error ? 'err' : ''}"><span class="sr">${st.error ? 'failed: ' : 'returned: '}</span>${st.result}</span>` : ''}</li>`)}</ol>`}</section>
-${alerts.length ? html`<section><div class="sechead"><h2>Alerts<span class="count">${int(alerts.length)}</span></h2></div><ul class="ledger">${alerts.map((a) => html`<li class="${a.resolved_at ? 'done' : ''}">${state(LEVEL_STATE, a.level)}<div class="what"><div class="title">${ruleName(a.rule)}</div><p class="detail">${a.message}</p><p class="meta">${when(a.ts)}${a.resolved_at ? ' · resolved' : ''}</p></div><div class="acts"></div></li>`)}</ul></section>` : ''}
+  const paused = s.status === 'blocked';
+  const tokIn = reqs.reduce((a, r) => a + r.in_tok + r.cache_w + r.cache_r, 0);
+  const cacheRead = reqs.reduce((a, r) => a + r.cache_r, 0);
+  const minutes = Math.max(1, Math.round((s.last_at - s.started_at) / 60_000));
+  const st = paused ? html`<span class="state trip">Paused ${ago(s.last_at, now)}</span>` : s.status === 'warned' ? html`<span class="state caution">Warned</span>` : html`<span class="state ok">Running · last request ${ago(s.last_at, now)}</span>`;
+  const body = html`<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Board</a> / <a href="/sessions">Sessions</a> / ${shortId(s.id)}</nav>
+<article class="slip big${paused ? '' : ' calm'}"><div>${st}<h1 class="task">${s.label || 'Untitled session'}</h1>
+<div class="meta">${key ? html`<a href="/keys/${key.id}">${key.name}</a>` : 'deleted key'}${t.model ? html`<span class="sep">·</span>${t.model}` : ''}<span class="sep">·</span>${s.id}</div>
+${s.status_reason && s.status !== 'active' ? html`<p class="why${paused ? '' : ' caution'}">${s.status_reason}${ruleLink(pauseRule(store, s.id, s.status_reason) ?? alerts.at(-1)?.rule ?? null)}</p>` : ''}</div>
+<div class="fig"><span class="money">${usd(s.spend)}</span><span class="n">${int(s.requests)} requests · ${int(minutes)} min</span></div>
+<div class="foot">${paused
+    ? html`<form class="inline" method="post" action="${self}/resume">${hidden(p)}<button class="primary">Resume session</button></form><p>The agent gets a refusal until you resume. Resuming clears the repeats counted so far.</p>`
+    : html`<form class="inline" method="post" action="${self}/pause">${hidden(p)}<button>Pause session</button></form><p>Pausing refuses this session's next request until you resume it.${s.resumed_at ? ` Last resumed ${ago(s.resumed_at, now)}.` : ''}</p>`}</div></article>
+
+<section aria-labelledby="tl-h"><div class="sechead"><h2 id="tl-h">Timeline</h2><span>${t.bars.length < s.requests ? `last ${int(t.bars.length)} of ${int(s.requests)} requests` : `${int(t.bars.length)} requests`}${t.first ? ` · ${hhmm(t.first)} to ${hhmm(t.last!)} UTC` : ''}</span></div>
+${t.bars.length ? html`<div class="timeline"><svg viewBox="0 0 1000 88" preserveAspectRatio="none" role="img" aria-label="${int(t.bars.length)} requests, ${int(t.fails)} with a failed tool result or a refusal">${bars(t, 1000, 88, 24, t.bars.length > 100 ? 1 : 4)}</svg></div>
+<div class="t-axis"><span>${hhmm(t.first!)}</span><span>${hhmm(Math.round((t.first! + t.last!) / 2))}</span><span>${hhmm(t.last!)}</span></div>
+<p class="legend"><i></i>request, height is tokens<i class="fail"></i>a tool result failed, or Leash refused the request</p>` : html`<div class="empty">No requests yet.</div>`}</section>
+
+<section aria-labelledby="rp-h"><div class="sechead"><h2 id="rp-h">Replay</h2><span>${int(steps.length)} step${steps.length === 1 ? '' : 's'} · repeats folded · previews redacted</span></div>
+<div class="term"><div class="term-head"><span><b>${shortId(s.id)}</b> · oldest first</span><span>times in UTC</span></div>
+${steps.length === 0 ? html`<p class="none">No tool calls yet. Plain chat requests show under Requests.</p>` : html`<ol>${steps.map((x) => html`<li class="${x.n >= 3 ? 'loop' : ''}"><span class="t">${when(x.ts).slice(11, 19)}</span><span class="tool">${x.tool}</span>
+<span class="call">${x.path ? html`<strong>${x.path}</strong> ` : ''}${x.call}${x.n > 1 ? html`<span class="x">×${x.n}</span>` : ''}</span>
+<span class="res${x.error ? ' err' : ''}">${x.result !== null ? html`<span class="sr">${x.error ? 'failed: ' : 'returned: '}</span>${x.error ? '✗ ' : ''}${x.result}` : ''}</span></li>`)}</ol>`}</div></section>
+
+<section aria-labelledby="u-h"><div class="sechead"><h2 id="u-h">Usage</h2><span>measured at the gateway</span></div>
+<ul class="usage"><li><span class="v">${int(tokIn)}</span><span class="l">tokens in</span></li><li><span class="v">${int(reqs.reduce((a, r) => a + r.out_tok, 0))}</span><span class="l">tokens out</span></li>
+<li><span class="v">${tokIn ? `${((cacheRead / tokIn) * 100).toFixed(1)}%` : '—'}</span><span class="l">read from cache</span></li><li><span class="v">${int(median(reqs.map((r) => r.latency_ms)))} ms</span><span class="l">median response time</span></li></ul></section>
+
+${alerts.length ? html`<section aria-labelledby="al-h"><div class="sechead"><h2 id="al-h">Alerts</h2><span>${int(alerts.length)}</span></div><ul class="ledger">${alerts.map((a) => html`<li class="${a.resolved_at ? 'done' : ''}">${state(LEVEL_STATE, a.level)}<div class="what"><div class="title">${ruleName(a.rule)}</div><p class="detail">${a.message}</p><p class="meta">${when(a.ts)}${a.resolved_at ? ' · resolved' : ''}</p></div><div class="acts">${RULE_HELP[a.rule] ? html`<a class="btn quiet sm" href="/guards#${a.rule}">About this rule</a>` : ''}</div></li>`)}</ul></section>` : ''}
 <section><details class="more"${reqs.length <= 12 ? new Safe(' open') : ''}><summary>Requests (${int(reqs.length)})</summary>
-${reqs.length === 0 ? html`<div class="empty">No requests.</div>` : html`<div class="scroll"><table><thead><tr><th>Time</th><th>Model</th><th class="num">Input</th><th class="num">Cache read</th><th class="num">Output</th><th class="num">Cost</th><th class="num">Latency</th><th>Result</th></tr></thead><tbody>
-${reqs.slice(-200).reverse().map((r) => html`<tr><td class="nowrap">${when(r.ts).slice(11, 19)}</td><td class="mono">${r.model}</td><td class="num">${int(r.in_tok + r.cache_w)}</td><td class="num">${int(r.cache_r)}</td><td class="num">${int(r.out_tok)}</td>
+${reqs.length === 0 ? html`<div class="empty">No requests.</div>` : html`<div class="scroll"><table><thead><tr><th>Time (UTC)</th><th>Model</th><th class="num">Input</th><th class="num">Cache read</th><th class="num">Output</th><th class="num">Cost</th><th class="num">Latency</th><th>Result</th></tr></thead><tbody>
+${reqs.slice(-200).reverse().map((r) => html`<tr><td class="nowrap mono">${when(r.ts).slice(11, 19)}</td><td class="mono">${r.model}</td><td class="num">${int(r.in_tok + r.cache_w)}</td><td class="num">${int(r.cache_r)}</td><td class="num">${int(r.out_tok)}</td>
 <td class="num">${usd(r.cost)}${r.price_known ? '' : html`<abbr title="Charged at the fail-safe rate: this model has no price">*</abbr>`}</td><td class="num nowrap">${int(r.latency_ms)} ms</td>
-<td>${r.blocked ? html`<span class="tag trip">refused · ${ruleName(r.blocked)}</span>` : r.status < 400 ? html`<span class="tag">${r.status}</span>` : html`<span class="tag trip">${r.status}</span>`}${r.redactions ? html` <span class="tag caution">${r.redactions} redacted</span>` : ''}</td></tr>`)}
+<td>${r.blocked ? html`<span class="tag trip">refused · ${ruleName(r.blocked)}</span>` : r.status < 400 ? html`<span class="tag">${r.status}</span>` : html`<span class="tag trip">${r.status}</span>`}${r.redactions ? html` <span class="tag box">${r.redactions} redacted</span>` : ''}</td></tr>`)}
 </tbody></table></div>`}</details></section>`;
-  return layout(p, s.label || 'Session', '/sessions', body);
+  return layout(p, s.label || 'Session', '/sessions', body, { refresh: paused ? undefined : 30 });
+}
+
+// ---------- Guard rules ----------
+
+/** What each guard does and what to do about it. Linked from pause reasons and alerts. */
+const RULE_HELP: Record<string, [string, string]> = {
+  identical_failure: ['The same tool returned the same failure 3 times in a row. The agent is retrying something that is not changing.', 'Pauses the session when the key\'s loop rules are on "pause". Look at the replay, fix the cause or give the agent a hint, then resume.'],
+  repeated_call: ['The same tool call, with identical arguments, appeared 3 or more times in the last 10 calls.', 'Warns at 3 and pauses at 4 when loop rules are on "pause". Resuming clears the repeats counted so far.'],
+  file_reread: ['The agent read the same file 5 times without changing it, usually a sign it is lost.', 'Warns only. Nothing is stopped.'],
+  spend_velocity: ['One session spent more than the velocity limit (LEASH_VELOCITY_USD, $5 by default) within 10 minutes.', 'Pauses the session when loop rules are on "pause", otherwise warns.'],
+  turn_ceiling: ['A session passed the request ceiling (LEASH_TURN_CEILING, 200 by default).', 'Warns only. Very long sessions are where runaway spend hides.'],
+  budget: ['A key reached its daily or monthly budget, or all keys together reached the daily cap.', 'Requests are refused until the budget resets (00:00 UTC, or the 1st of the month) or you raise it on the key\'s page.'],
+  budget_80: ['A key or the daily cap for all keys passed 80% of its budget.', 'Warns only, once per budget per day.'],
+  secret_redacted: ['A request contained something that looks like a secret: an API key, a token, a private key or a password assignment.', 'Leash replaced it with [REDACTED:type] before the request left. The agent keeps working.'],
+  secret_blocked: ['A request contained a secret and the key is set to block requests with secrets.', 'The request was refused. Remove the secret from the agent\'s context, or switch the key to redact.'],
+  secret: ['A request was refused because it contained a secret.', 'Remove the secret from the agent\'s context, or switch the key to redact.'],
+  session_blocked: ['The agent sent another request while its session was paused.', 'Leash refused it. Resume the session to let it continue.'],
+  unpriced_model: ['A model has no price in Leash and the provider did not report a cost.', 'It is charged at a high fail-safe rate so budgets stay safe. Set its price on the Providers page.'],
+};
+
+function guardsPage(p: Page): string {
+  const body = html`<div class="head"><div><h1>How the guards work</h1><p>Every rule Leash applies between your agents and the model API, what trips it, and what to do next.</p></div></div>
+<ul class="rules">${Object.entries(RULE_HELP).map(([id, [what, then]]) => html`<li id="${id}"><h2>${ruleName(id)}<code>${id}</code></h2><div><p>${what}</p><p>${then}</p></div></li>`)}</ul>
+<p class="prose">Loop rules are set per key: <strong>pause</strong> stops the session, <strong>warn</strong> only alerts, <strong>off</strong> disables them. Change them on each key's page.</p>`;
+  return layout(p, 'Guards', '', body);
 }
 
 function field(label: string, control: Safe, hint?: string): Safe {
@@ -288,7 +438,7 @@ ${keys.map((k) => html`<tr><td><a href="/keys/${k.id}">${k.name}</a><div class="
 <td class="num">${usd(store.keySpendSince(k.id, startOfMonthUtc(now)))}${k.monthly_usd !== null ? html`<div class="muted">of ${usd(k.monthly_usd)}</div>` : ''}</td>
 <td><span class="tag">${GUARD_SECRETS[k.redact_mode] ?? k.redact_mode}</span> <span class="tag">${GUARD_LOOPS[k.loop_mode] ?? k.loop_mode}</span></td><td class="nowrap">${ago(k.last_used_at, now)}</td></tr>`)}
 </tbody></table></div>`}</section>
-<section><div class="sechead"><h2>Daily cap for all keys</h2></div><p class="muted">Every key stops for the rest of the UTC day once total spend reaches this amount.</p>
+<section id="cap"><div class="sechead"><h2>Daily cap for all keys</h2></div><p class="muted">Every key stops for the rest of the UTC day once total spend reaches this amount.</p>
 <form class="inline-form" method="post" action="/settings/budget">${hidden(p)}${field('USD per day', html`<input name="global_daily_usd" type="number" min="0" step="0.01" placeholder="No limit" value="${limit ?? ''}">`)}<button>Save cap</button></form></section>`;
   return layout(p, 'Keys', '/keys', body);
 }
@@ -387,7 +537,7 @@ ${open.length > 1 ? html`<form method="post" action="/alerts/resolve-all" data-c
 ${shown.length === 0 ? html`<div class="empty">${showAll ? 'No alerts yet.' : 'No open alerts. Every guard is quiet.'}</div>` : html`<ul class="ledger">${shown.map((a) => html`<li class="${a.resolved_at ? 'done' : ''}">${state(LEVEL_STATE, a.level)}<div class="what">
 <div class="title">${ruleName(a.rule)}</div><p class="detail">${a.message}</p>
 <p class="meta">${a.key_name ?? 'all keys'}${a.session_id ? html`<span class="sep">·</span><a href="/sessions/${encodeURIComponent(a.session_id)}">session</a>` : ''}<span class="sep">·</span><span title="${when(a.ts)}">${ago(a.ts, now)}</span>${a.resolved_at ? html`<span class="sep">·</span>resolved` : ''}</p></div>
-<div class="acts">${a.resolved_at ? '' : html`<form class="inline" method="post" action="/alerts/${a.id}/resolve">${hidden(p)}<button class="sm">Resolve</button></form>`}</div></li>`)}</ul>`}
+<div class="acts">${RULE_HELP[a.rule] ? html`<a class="btn quiet sm" href="/guards#${a.rule}">About this rule</a>` : ''}${a.resolved_at ? '' : html`<form class="inline" method="post" action="/alerts/${a.id}/resolve">${hidden(p)}<button class="sm">Resolve</button></form>`}</div></li>`)}</ul>`}
 <section><div class="sechead"><h2>Notifications</h2></div>
 <form class="form" method="post" action="/alerts/settings">${hidden(p)}
 <div class="row">${field('Telegram bot token', html`<input name="telegram_token" type="password" maxlength="200" autocomplete="off" placeholder="${s.telegramToken ? 'Saved. Leave empty to keep it' : '123456:ABC…'}">`, 'Create a bot with @BotFather.')}
@@ -401,7 +551,7 @@ ${s.telegramToken ? html`<label class="check"><input type="checkbox" name="clear
 function loginPage(error: string | null): string {
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sign in · Leash</title><link rel="stylesheet" href="/static/app.css?v=${V}"></head><body><main class="signin">
-<div class="brand">${new Safe(LOGO)}Leash</div><h1>Sign in</h1><p>Use the admin token from your <code>LEASH_ADMIN_TOKEN</code> setting.</p>
+<span class="word">leash<span>.</span></span><h1>Sign in</h1><p>Use the admin token from your <code>LEASH_ADMIN_TOKEN</code> setting.</p>
 ${error ? html`<div class="banner trip" role="alert"><p class="msg">${error}</p></div>` : ''}
 <form class="form plain" method="post" action="/login">${field('Admin token', html`<input name="token" type="password" required autofocus autocomplete="current-password">`)}<div class="actions"><button class="primary">Sign in</button></div></form>
 </main></body></html>`.value;
@@ -495,14 +645,15 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
   if (req.method === 'GET') {
     let page: string | null = null;
     let m: RegExpExecArray | null;
-    if (path === '/') page = overview(p);
+    if (path === '/') page = board(p);
+    else if (path === '/guards') page = guardsPage(p);
     else if (path === '/sessions') page = sessionsPage(p);
     else if ((m = /^\/sessions\/([^/]+)$/.exec(path))) page = sessionPage(p, decodeURIComponent(m[1]!));
     else if (path === '/keys') page = keysPage(p);
     else if ((m = /^\/keys\/(\d+)$/.exec(path))) page = keyPage(p, Number(m[1]));
     else if (path === '/providers') page = providersPage(p);
     else if (path === '/alerts') page = alertsPage(p);
-    if (page === null) return sendHtml(res, 404, layout(p, 'Not found', '', html`<h1>Not found</h1><p class="facts">Nothing lives at this address. <a href="/">Back to the overview</a>.</p>`));
+    if (page === null) return sendHtml(res, 404, layout(p, 'Not found', '', html`<h1>Not found</h1><p class="facts">Nothing lives at this address. <a href="/">Back to the board</a>.</p>`));
     return sendHtml(res, 200, page);
   }
 
@@ -583,6 +734,13 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
       store.setSetting('global_daily_usd', v === null ? null : String(v));
       return redirect(res, '/keys?m=budget_saved');
     }
+    if ((m = /^\/sessions\/([^/]+)\/pause$/.exec(path))) {
+      const id = decodeURIComponent(m[1]!);
+      const s = store.getSession(id);
+      if (!s) throw new HttpError(404, 'No such session');
+      if (s.status !== 'blocked') store.setSessionStatus(id, 'blocked', 'Paused from the dashboard.');
+      return redirect(res, `/sessions/${encodeURIComponent(id)}?m=session_paused`);
+    }
     if ((m = /^\/sessions\/([^/]+)\/resume$/.exec(path))) {
       const id = decodeURIComponent(m[1]!);
       if (!store.getSession(id)) throw new HttpError(404, 'No such session');
@@ -618,7 +776,7 @@ export async function handleDashboard(req: IncomingMessage, res: ServerResponse,
     }
   } catch (e) {
     if (e instanceof HttpError) {
-      return sendHtml(res, e.status, layout(p, 'Could not save', '', html`<h1>Could not save</h1><div class="banner trip" role="alert"><p class="msg">${e.message}</p></div><p>Go back to fix the form, or <a href="/">return to the overview</a>.</p>`));
+      return sendHtml(res, e.status, layout(p, 'Could not save', '', html`<h1>Could not save</h1><div class="banner trip" role="alert"><p class="msg">${e.message}</p></div><p>Go back to fix the form, or <a href="/">return to the board</a>.</p>`));
     }
     throw e;
   }

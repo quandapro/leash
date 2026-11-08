@@ -1,65 +1,67 @@
 # Design
 
-The Leash dashboard: a calm breaker panel for AI agents. Quiet until something trips, then it says exactly what
-and offers the next action. Strategy and audience live in PRODUCT.md; this file is the visual system. Source of
-truth for tokens: `src/dashboard/assets.ts`.
+The Leash dashboard: a board of agent sessions, in the same theme as the landing page
+(quandapro.github.io/products/leash) so product and site read as one brand. Quiet until something trips, then it
+says exactly what and offers the next action. Strategy and audience live in PRODUCT.md; this file is the visual
+system. Source of truth for tokens: `src/dashboard/assets.ts`.
 
 ## Theme
 
-Follows `prefers-color-scheme`. Light is the reference; dark is a full peer, not an inversion. Neutrals are tinted
-toward the brand blue (hue 265), never warm or cream.
+Follows `prefers-color-scheme`. Light is the reference ("paper"); dark is a full peer. Values are the landing
+page's, copied exactly.
 
 ## Color
 
-Strategy: **restrained**. Neutrals carry the page; colour only means something.
+Strategy: **restrained**. Paper and ink carry the page; colour only means something.
 
 | Token | Light | Dark | Use |
 | --- | --- | --- | --- |
-| `--ground` | oklch(0.975 0.004 265) | oklch(0.18 0.012 265) | Page background |
-| `--surface` | white | oklch(0.215 0.014 265) | Top bar, forms, inputs |
-| `--sunk` | oklch(0.955 0.006 265) | oklch(0.16 0.012 265) | Code, meter track, tags |
-| `--ink` / `--muted` / `--faint` | 0.23 / 0.46 / 0.62 L | 0.93 / 0.72 / 0.58 L | Text tiers; muted passes 4.5:1 on ground |
-| `--accent` | oklch(0.5 0.2 268) | oklch(0.72 0.14 268) | Leash blue: primary action, links, current nav, today's spend |
-| `--trip` | oklch(0.5 0.15 42) | oklch(0.74 0.13 45) | Rust: paused, blocked, cap reached. The only alarming colour |
-| `--caution` | oklch(0.5 0.11 75) | oklch(0.8 0.11 80) | Warnings, 80% of a cap |
-| `--ok` | oklch(0.5 0.1 155) | oklch(0.75 0.11 155) | Running, in use |
-
-Blue and rust come from the landing page (quandapro.github.io/products/leash) so product and site read as one brand.
+| `--paper` | #F1F3F0 | #0F1215 | Page background |
+| `--sheet` | #FAFBF9 | #151A1E | Slips, inputs, sign-in |
+| `--ink` / `--muted` | #14171C / #5B626C | #E6E8EA / #98A0AA | Text; ink also draws section rules and buttons |
+| `--rule` | #D4D8D2 | #2A3036 | Hairlines, meter tracks |
+| `--box` | #2E4FE0 | #8197FF | Leash blue: links, focus, the first key's spend |
+| `--mark` | #B7410E | #F08A55 | Rust: paused, refused, failed, cap reached. The only alarming colour |
+| `--caution` | #8A5A00 | #E2B45C | Warnings |
+| `--ok` | #2F7D4F | #6CC594 | Running |
+| `--bars` | #A3A9B0 | #59616B | Ordinary requests in activity strips |
+| `--term` | #14171C | #0A0C0F | Replay and snippets (the landing page's gateway terminal) |
 
 ## Typography
 
-- **Archivo** (variable 400-700) for all UI text. **IBM Plex Mono** (400, 600) for keys, models, commands, tool
-  calls. Both SIL OFL, bundled in `src/dashboard/fonts/` and served by Leash (`font-src 'self'`); no CDN.
-- Fixed scale: 12 (meta, captions, state words) · 14 (body) · 17 (section heads, brand) · 24 (page title) ·
-  30 (overview status line). Mono runs at 13 next to 14 sans.
-- Sentence case everywhere. No uppercase tracked labels. Prose capped at 65ch.
-- Tabular numerals on the whole body so money and counts line up.
+- **Archivo** (variable, width 62-125, weight 400-900) for headings and titles: page titles and section heads at
+  width 112 / weight 800, the wordmark at width 125 / 850, session titles at normal width / 680.
+- **Source Serif 4** (400-600) for prose: status sentences, pause reasons, alert text, hints.
+- **IBM Plex Mono** (400, 500) for navigation, buttons, state words, ids, models, money, captions.
+- All three SIL OFL, bundled in `src/dashboard/fonts/` and served by Leash (`font-src 'self'`); no CDN.
+- Smallest text 12px. Prose capped near 62-65ch. Tabular numerals everywhere.
 
 ## Layout
 
-- One column, max 1080px. Sticky 52px top bar; nav marks the current page with an underline.
-- **Ledger rows** instead of cards: `state word | what (title, detail, meta) | actions`, separated by hairlines.
-  They stack on phones with actions under the text.
-- Tables only for genuinely tabular data (keys, providers, prices, requests).
-- Forms are closed by default (`<details>`), opened by the one primary button of the page.
+- One column up to 1180px. Sticky 54px mono bar with the `leash.` wordmark; the current page is underlined.
+- Page head: wide title, one muted sentence, search box on the right.
+- Section heads: wide Archivo with a 1.5px ink rule underneath and a mono note in blue on the right.
+- Board: spend bar, then a main column (Paused, Running, Finished today) and a 290px side column (Also flagged).
+- Ruled rows on paper for lists; tables only for genuinely tabular data (keys, providers, prices, requests).
+- Forms stay closed (`<details>`) until the page's primary button opens them.
 
 ## Signature elements
 
-- **Status line** on the overview: one sentence ("1 session paused, 2 alerts to review." / "All quiet. Nothing
-  needs you.") with a dot that turns rust only when something waits on the user. Followed by "Needs you" with
-  inline Resume / Resolve / Set price.
-- **Meters**: spend against a cap as an 8px bar with a dashed notch at 80%; blue, then amber past the notch, rust
-  at the cap, with the exact amount in words beside it.
-- **Replay**: tool calls paired with results; identical consecutive steps fold into one row with `×N`; folded
-  runs of 3 or more get the rust tint.
+- **Slips**: a paused session is a sheet with a rust border pushed 14px out of line, the way an air-traffic
+  controller cocks a flight strip that needs attention. Its foot holds Resume and says what Resume does.
+- **Activity strips**: every session row carries one bar per request, height by tokens; a bar turns rust when a
+  tool result in it failed or Leash refused it. The session page draws the same thing large as a timeline.
+- **Spend bar**: today's spend for all keys as one bar split by key, with a dashed rust line at 80% of the cap.
+- **Terminal replay**: tool calls paired with results in the landing page's dark log style; identical
+  consecutive steps fold into one row with `×N`, runs of 3 or more get a rust tint.
 
 ## Components
 
-- Buttons: 32px (28px small), 6px radius. Primary (blue, one per view), secondary (outlined), quiet (text),
-  danger (rust outline). Visible `:focus-visible` ring on everything.
-- State words: dot + word in the state colour ("Paused", "Blocked", "Warning", "Running"). Never colour alone.
-- Banners: full 1px border with a tinted fill. Never a side stripe.
-- Copy buttons sit inside snippets; secrets shown once in a larger mono snippet.
+- Buttons: mono 13px, 1.5px ink border, 2px radius. Primary is ink-filled and turns blue on hover; danger is rust.
+  One primary per view.
+- State words: dot + mono word in the state colour ("Paused 4m ago", "Running", "Warned"). Never colour alone.
+- Banners: full 1px border, tinted fill for trip and caution. Never a side stripe.
+- Meters (key pages): 8px bar with a dashed notch at 80%, exact amount beside it.
 
 ## Motion
 
@@ -68,5 +70,5 @@ Blue and rust come from the landing page (quandapro.github.io/products/leash) so
 
 ## Don't
 
-Side-stripe borders, KPI card rows, uppercase eyebrows, gradient text, nested cards, external fonts or scripts,
-inline styles (blocked by CSP), colour as the only signal.
+Side-stripe borders, cards inside cards, KPI card rows, uppercase eyebrows, gradient text, external fonts or
+scripts, inline styles (blocked by CSP; use SVG attributes for data-driven sizes), colour as the only signal.

@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-11-07
+Last updated: 2026-11-08
 
 ## Where things stand
 
@@ -20,7 +20,7 @@ Done and verified (unit tests + `npm run e2e` in a 2 vCPU / 4 GB container):
   identical failure), spend velocity, turn ceiling; 403 blocks; dashboard resume with offset.
 - Secret redaction (user-side content only), modes redact / block / log.
 - Alerts: stored, deduplicated, delivered to Telegram and webhook.
-- Dashboard: overview, sessions + replay, keys + setup snippets, providers + prices, alerts + settings;
+- Dashboard: board, sessions + search + replay, pause/resume, guard-rule help, keys + setup snippets, providers + prices, alerts + settings;
   CSRF, strict CSP, login throttling. `/api/stats` JSON, `/healthz`.
 - Docker image (63 MB, ~96 MB RAM), production compose with Caddy TLS, hardened container settings.
 - KB hooks (SessionStart load, Stop gate) and git pre-commit (KB gate + secret scan). CI workflow.
@@ -35,12 +35,18 @@ planted AWS key never reached the provider; Leash overhead ~5 ms median. Traces 
 (gitignored). The run found and fixed: Claude Code 2.1 JSON session ids, `<system-reminder>` session labels,
 provider-reported cost (OpenRouter `usage.cost`), null usage fields.
 
-Dashboard redesigned 2026-11-07 (impeccable critique 22 → 28/40): status line + "Needs you", ledger rows, spend
-meters, folded replay, bundled Archivo / IBM Plex Mono, light + dark. `npm run demo` serves a populated dashboard
-on :8790 (token `demo-admin-token-0123456789abcdef`). PRODUCT.md / DESIGN.md hold the design context; the
-impeccable skill is copied (gitignored) into `.claude/skills/impeccable/` from the owner's EasyBaby project.
-Open design items: keyboard shortcuts / session search, live updates instead of timed refresh, a page explaining
-each guard rule.
+Dashboard rebuilt 2026-11-08 as a "board" in the landing page's theme (mockup critique 23 → 29/40, all
+impeccable detectors clean on board, session, keys, alerts, guards). Board: date + one-sentence status, session
+search ("/" focuses it), spend today as one bar split by key, paused sessions as rust "slips" pushed out of line
+with Resume, Running / Finished today rows with per-request activity strips, "Also flagged" side column. Session
+page: header slip with Resume or Pause, timeline, replay in the landing page's dark terminal style, usage. New:
+`POST /sessions/:id/pause`, `/sessions?q=`, `/guards` (what each rule does; linked from reasons and alerts).
+Fonts: Archivo (variable wdth+wght), Source Serif 4, IBM Plex Mono 400/500, bundled. `npm run demo` serves a
+populated dashboard on :8790 (token `demo-admin-token-0123456789abcdef`). PRODUCT.md / DESIGN.md hold the design
+context; impeccable is copied (gitignored) into `.claude/skills/impeccable/` from the owner's EasyBaby project.
+The dashboard CSP blocks impeccable's injected detector; run it on pages saved with curl and served from another
+port (see RUNBOOK). Open design items: live updates instead of timed refresh, an "End session" (permanent block),
+a working-directory hint per session (not captured today).
 Fonts are binary files: `.gitattributes` marks `*.woff2 binary` so the repo-wide `eol=lf` rule never touches them.
 
 ## Next steps (in order)

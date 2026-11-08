@@ -51,3 +51,11 @@ Keep traces out of git (they hold full prompts): use `e2e/.tmp/` or the scratchp
 - New guard behaviour gets a step in `e2e/scenario.ts` so both test paths cover it.
 - Before adding or upgrading a dependency: check advisories (GitHub/NVD), prefer a release older than ~7 days
   unless it is a security fix, and record the decision in `kb/DECISIONS.md`.
+
+## Design checks (impeccable)
+
+The dashboard CSP (`script-src 'self'`) blocks impeccable's injected `detect.js`. To run the in-browser detector:
+start `npm run demo`, log in with curl (`-d token=demo-admin-token-0123456789abcdef`, keep the cookie jar), save
+each page, rewrite `/static/` URLs to `http://127.0.0.1:8790/static/`, serve the folder on another port, then
+inject `http://localhost:8400/detect.js` (from `live-server.mjs --background`). Static check:
+`node .claude/skills/impeccable/scripts/detect.mjs --json src/dashboard`. Stop both servers afterwards.

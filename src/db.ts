@@ -246,6 +246,19 @@ export class Store {
   sessionToolEvents(sessionId: string, limit = 500): (ToolEvent & { id: number })[] {
     return this.all('SELECT * FROM tool_events WHERE session_id = ? ORDER BY id DESC LIMIT ?', sessionId, limit);
   }
+  /** The latest requests of a session, oldest first: what the dashboard draws as its activity strip. */
+  sessionTape(sessionId: string, limit = 60): { ts: number; tok: number; model: string; blocked: string | null }[] {
+    return this.all(`SELECT * FROM (SELECT ts, id, in_tok + out_tok + cache_w + cache_r AS tok, model, blocked FROM requests
+                     WHERE session_id = ? ORDER BY ts DESC, id DESC LIMIT ?) ORDER BY ts, id`, sessionId, limit);
+  }
+  /** When the session's tool results came back as errors. */
+  sessionFailureTimes(sessionId: string, since: number): number[] {
+    return this.all<{ ts: number }>(`SELECT ts FROM tool_events WHERE session_id = ? AND kind = 'result' AND is_error = 1 AND ts >= ? ORDER BY ts`,
+      sessionId, since).map((r) => r.ts);
+  }
+  lastToolCall(sessionId: string): { name: string; path: string | null; preview: string; ts: number } | undefined {
+    return this.get(`SELECT name, path, preview, ts FROM tool_events WHERE session_id = ? AND kind = 'call' ORDER BY id DESC LIMIT 1`, sessionId);
+  }
 
   // Alerts
   /** Inserts an alert unless an unresolved one with the same session, rule and level exists. Returns the id or 0. */

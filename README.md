@@ -17,7 +17,7 @@ passes four checks before it reaches the provider, and every response feeds a lo
 | **Alerts** | Telegram and webhook, with a link to the session replay. |
 
 Blocks return a non-retryable `403` with a plain-English reason, so the agent stops and shows you why
-instead of retrying. Resume a blocked session from the dashboard with one click.
+instead of retrying. Pause or resume any session from the dashboard with one click.
 
 [![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostinger.com/deploy?template=quandapro/leash)
 

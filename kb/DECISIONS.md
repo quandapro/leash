@@ -107,3 +107,17 @@ previous version's stylesheet from cache for up to an hour.
 impeccable's init and critique flows ask the user questions. The owner's standing rule for Leash is "do not ask",
 so PRODUCT.md was written from the README, spec and KB, and the critique scope (all issues) was decided here.
 
+
+## 2026-11-08 Dashboard follows the landing page, sessions shown as strips
+The owner asked for the landing page's theme and a mockup first. Tokens, fonts (wide Archivo heads, Source Serif 4
+prose, Plex Mono data), the ink-underlined section heads, the ink-bordered mono buttons and the dark gateway
+terminal now come from quandapro.github.io/products/leash. Signature: a paused session is a slip pushed out of
+line (a controller "cocking" a flight strip), every session carries a strip of its requests with failures in
+rust. Sessions are named by their first prompt; the hex id is metadata. Fonts grow to ~240 KB, served once and
+cached as immutable; acceptable for a self-hosted admin page.
+
+## 2026-11-08 Pause from the dashboard, no "End session" yet
+Pause reuses the existing blocked status (reason "Paused from the dashboard."), so the proxy's existing check
+refuses the next request and Resume works unchanged. A permanent "End session" would need a new status and
+semantics for agents that reuse the session id; left out until there is a need. No single-key "R to resume"
+shortcut either: one stray keypress must not release a stopped agent.
